@@ -1,2 +1,3 @@
 59-gnome-touchpad-gschema.patch
 debian/01_debianize_xrdb.patch
+61-powerbutton-action.patch

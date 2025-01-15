@@ -1,0 +1,13 @@
+Index: gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.power.gschema.xml.in
+===================================================================
+--- gnome-settings-daemon.orig/data/org.gnome.settings-daemon.plugins.power.gschema.xml.in
++++ gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.power.gschema.xml.in
+@@ -37,7 +37,7 @@
+       <description>If the ambient light sensor functionality is enabled.</description>
+     </key>
+     <key name="power-button-action" enum="org.gnome.settings-daemon.GsdPowerButtonActionType">
+-      <default>'suspend'</default>
++      <default>'interactive'</default>
+       <summary>Power button action</summary>
+       <description>The action to take when the system power button is pressed. Virtual machines only honor the 'nothing' action, and will shutdown otherwise. Tablets always suspend, ignoring all the other action options.</description>
+     </key>
