@@ -1,0 +1,13 @@
+Index: gnome-settings-daemon/plugins/power/gsd-backlight.c
+===================================================================
+--- gnome-settings-daemon.orig/plugins/power/gsd-backlight.c
++++ gnome-settings-daemon/plugins/power/gsd-backlight.c
+@@ -252,7 +252,7 @@ gsd_backlight_udev_init (GsdBacklight *b
+          * raw, then assume that 0 does not turn off the backlight completely. */
+         if (backlight->brightness_max < 99 &&
+             g_strcmp0 (g_udev_device_get_sysfs_attr (backlight->udev_device, "type"), "raw") == 0)
+-                backlight->brightness_min = 0;
++                backlight->brightness_min = 1;
+ 
+         /* Ignore a backlight which has no steps. */
+         if (backlight->brightness_min >= backlight->brightness_max) {
