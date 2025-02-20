@@ -368,12 +368,13 @@ create_notification (const char *summary,
 {
         NotifyNotification *notification;
 
-        notification = notify_notification_new (summary, body, icon_name);
+        notification = notify_notification_new (summary, body, NULL);
         /* TRANSLATORS: this is the notification application name */
         notify_notification_set_app_name (notification, _("Power"));
         notify_notification_set_hint_string (notification, "desktop-entry", "gnome-power-panel");
         notify_notification_set_hint_string (notification, "x-gnome-privacy-scope",
                                              notification_privacy_scope_to_string (privacy_scope));
+        notify_notification_set_hint (notification, "image-path", g_variant_new_string (icon_name));
         notify_notification_set_urgency (notification,
                                          NOTIFY_URGENCY_CRITICAL);
         *weak_pointer_location = notification;
@@ -1555,7 +1556,10 @@ lid_state_changed_cb (UpClient *client, GParamSpec *pspec, GsdPowerManager *mana
                 return;
 
         /* same lid state */
+        /* FIXME: https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/issues/859 */
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         tmp = up_client_get_lid_is_closed (manager->up_client);
+        G_GNUC_END_IGNORE_DEPRECATIONS
         if (manager->lid_is_closed == tmp)
                 return;
         manager->lid_is_closed = tmp;
@@ -2452,17 +2456,17 @@ show_sleep_warning (GsdPowerManager *manager)
         /* create a new notification */
         switch (manager->sleep_action_type) {
         case GSD_POWER_ACTION_LOGOUT:
-                create_notification (_("Automatic logout"), _("You will soon log out because of inactivity."),
+                create_notification (_("Automatic Logout"), _("You will soon log out because of inactivity"),
                                      NULL, NOTIFICATION_PRIVACY_USER,
                                      &manager->notification_sleep_warning);
                 break;
         case GSD_POWER_ACTION_SUSPEND:
-                create_notification (_("Automatic suspend"), _("Suspending soon because of inactivity."),
+                create_notification (_("Automatic Suspend"), _("Suspending soon because of inactivity"),
                                      NULL, NOTIFICATION_PRIVACY_SYSTEM,
                                      &manager->notification_sleep_warning);
                 break;
         case GSD_POWER_ACTION_HIBERNATE:
-                create_notification (_("Automatic hibernation"), _("Suspending soon because of inactivity."),
+                create_notification (_("Automatic Hibernation"), _("Suspending soon because of inactivity"),
                                      NULL, NOTIFICATION_PRIVACY_SYSTEM,
                                      &manager->notification_sleep_warning);
                 break;
@@ -2941,9 +2945,12 @@ gsd_power_manager_start (GsdPowerManager *manager,
                 return FALSE;
         }
 
+        /* FIXME: https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/issues/859 */
+        G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         manager->lid_is_present = up_client_get_lid_is_present (manager->up_client);
         if (manager->lid_is_present)
                 manager->lid_is_closed = up_client_get_lid_is_closed (manager->up_client);
+        G_GNUC_END_IGNORE_DEPRECATIONS
 
         /* Set up the logind proxy */
         manager->logind_proxy =

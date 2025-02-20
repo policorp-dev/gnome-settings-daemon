@@ -204,6 +204,16 @@
       <summary>Log out</summary>
       <description>Binding to log out.</description>
     </key>
+    <key name="reboot" type="as">
+      <default>['']</default>
+      <summary>Reboot</summary>
+      <description>Binding to reboot.</description>
+    </key>
+    <key name="shutdown" type="as">
+      <default>['']</default>
+      <summary>Shut down</summary>
+      <description>Binding to shut down.</description>
+    </key>
     <key name="previous" type="as">
       <default>['']</default>
       <summary>Previous track</summary>
@@ -687,6 +697,11 @@
       <default>''</default>
       <summary>Command</summary>
       <description>Command to run when the binding is invoked</description>
+    </key>
+    <key name="enable-in-lockscreen" type="b">
+      <default>false</default>
+      <summary>Enable in Lockscreen</summary>
+      <description>Whether the command can be invoked while the lockscreen is shown</description>
     </key>
   </schema>
 </schemalist>

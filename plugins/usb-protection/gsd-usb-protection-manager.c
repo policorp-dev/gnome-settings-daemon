@@ -376,7 +376,7 @@ static void update_usb_protection_store (GsdUsbProtectionManager *manager,
                  * changed it. When this happens we set to false the control value. */
                 if ((g_strcmp0 (key, APPLY_POLICY) == 0 && protection_level == G_DESKTOP_USB_PROTECTION_ALWAYS)) {
                         g_settings_set (settings, USB_PROTECTION, "b", FALSE);
-                        g_warning ("We don't control anymore USBGuard because the configuration changed externally.");
+                        g_warning ("We do not control USBGuard any longer because the configuration changed externally.");
                 }
         }
 }
@@ -408,10 +408,11 @@ show_notification (GsdUsbProtectionManager *manager,
                 return;
         }
 
-        manager->notification = notify_notification_new (summary, body, "drive-removable-media-symbolic");
+        manager->notification = notify_notification_new (summary, body, NULL);
         notify_notification_set_app_name (manager->notification, _("USB Protection"));
         notify_notification_set_hint (manager->notification, "transient", g_variant_new_boolean (TRUE));
         notify_notification_set_hint_string (manager->notification, "x-gnome-privacy-scope", "system");
+        notify_notification_set_hint (manager->notification, "image-path", g_variant_new_string ("drive-removable-media-symbolic"));
         notify_notification_set_timeout (manager->notification, NOTIFY_EXPIRES_DEFAULT);
         notify_notification_set_urgency (manager->notification, NOTIFY_URGENCY_CRITICAL);
         g_signal_connect_object (manager->notification,
@@ -533,15 +534,15 @@ on_screen_locked (GsdScreenSaver          *screen_saver,
         if (error) {
                 if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
                         return;
-                g_warning ("Couldn't lock screen: %s", error->message);
+                g_warning ("Could not lock screen: %s", error->message);
         }
 
         authorize_device (manager, device_id);
         show_notification (manager,
                            _("New USB device"),
-                           _("New device has been detected while the session was not locked. "
-                             "If you did not plug anything, check your system for any suspicious device."));
-
+                           _("New USB device has been activated while the session was not locked. "
+                             "If you did not intend to insert any device, "
+                             "check your system for any suspicious gadgets and remove them."));
 }
 
 
@@ -682,7 +683,7 @@ on_usbguard_signal (GDBusProxy *proxy,
                         guint device_id;
                         show_notification (manager,
                                            _("New device detected"),
-                                           _("Either one of your existing devices has been reconnected or a new one has been plugged in. "
+                                           _("Either one of your existing devices has been reconnected or a new one has been inserted. "
                                              "If you did not do it, check your system for any suspicious device."));
                         g_variant_get_child (parameters, POLICY_APPLIED_DEVICE_ID, "u", &device_id);
                         authorize_device (manager, device_id);
@@ -725,7 +726,7 @@ on_usbguard_signal (GDBusProxy *proxy,
                                 show_notification (manager,
                                                    _("USB device blocked"),
                                                    _("The new inserted device has been blocked because the USB protection is active. "
-                                                     "If you want to activate the device, disable the USB protection and re-plug "
+                                                     "If you want to activate the device, disable the USB protection and re-insert "
                                                      "the device."));
                         }
                 } else {

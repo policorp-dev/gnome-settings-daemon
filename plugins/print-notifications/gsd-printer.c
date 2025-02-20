@@ -27,6 +27,9 @@
 #include <cups/cups.h>
 #include <cups/ppd.h>
 
+/* FIXME: https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/issues/860 */
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 static GDBusNodeInfo *npn_introspection_data = NULL;
 static GDBusNodeInfo *pdi_introspection_data = NULL;
 
@@ -1027,7 +1030,7 @@ handle_method_call (GDBusConnection       *connection,
                 NotifyNotification *notification;
                 notification = notify_notification_new (primary_text,
                                                         secondary_text,
-                                                        "printer-symbolic");
+                                                        NULL);
                 notify_notification_set_app_name (notification, _("Printers"));
                 notify_notification_set_hint_string (notification, "desktop-entry", "gnome-printers-panel");
                 notify_notification_set_hint (notification, "transient", g_variant_new_boolean (TRUE));
@@ -1401,3 +1404,5 @@ error:
 
   return 1;
 }
+
+G_GNUC_END_IGNORE_DEPRECATIONS
