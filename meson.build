@@ -1,6 +1,6 @@
 project(
   'gnome-settings-daemon', 'c',
-  version: '47.2',
+  version: '48.beta',
   license: [ 'GPL2+', 'LGPLv2+' ],
   meson_version: '>= 0.57.0'
 )
@@ -124,8 +124,8 @@ if enable_systemd and enable_elogind
 elif enable_systemd
   systemd_dep = dependency('systemd', version: '>= 243', required: true)
   libsystemd_dep = dependency('libsystemd', version: '>= 243', required: true)
-  systemd_userunitdir = systemd_dep.get_pkgconfig_variable('systemduserunitdir',
-                                                           define_variable: ['prefix', gsd_prefix])
+  systemd_userunitdir = systemd_dep.get_variable(pkgconfig: 'systemduserunitdir',
+                                                 pkgconfig_define: ['prefix', gsd_prefix])
 elif enable_elogind
   elogind_dep = dependency('libelogind', version: '>= 209', required: true)
 endif
@@ -231,7 +231,7 @@ if enable_wwan
   else
      gcr_dep = dependency('gcr-4', version: '>= 3.90.0')
   endif
-  mm_glib_dep = dependency('mm-glib', version: '>= 1.0')
+  mm_glib_dep = dependency('mm-glib', version: '>= 1.18')
 endif
 
 # Sharing plugin

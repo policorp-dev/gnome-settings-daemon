@@ -783,7 +783,7 @@ class PowerPluginTestBatteryLevels(PowerPluginBase):
         # Check that it was picked up
         self.check_plugin_log('EMIT: charge-critical', 2)
 
-        self.p_notify_log.check_line_re(rb'[0-9.]+ Notify "Power" .* "battery-caution-symbolic" ".*[Bb]attery [Aa]lmost [Ee]mpty.*"', timeout=0.5)
+        self.p_notify_log.check_line_re(rb'[0-9.]+ Notify "Power" .* "" ".*[Bb]attery [Aa]lmost [Ee]mpty.*"', timeout=0.5)
 
     def test_notify_critical_battery_on_start(self):
         '''action on critical battery on startup'''
@@ -793,7 +793,7 @@ class PowerPluginTestBatteryLevels(PowerPluginBase):
         # Check that it was picked up
         self.check_plugin_log('EMIT: charge-critical', 2)
 
-        self.p_notify_log.check_line_re(rb'[0-9.]+ Notify "Power" .* "battery-caution-symbolic" ".*[Bb]attery [Aa]lmost [Ee]mpty.*"', timeout=0.5)
+        self.p_notify_log.check_line_re(rb'[0-9.]+ Notify "Power" .* "" ".*[Bb]attery [Aa]lmost [Ee]mpty.*"', timeout=0.5)
 
     def test_notify_device_battery(self):
         '''critical power level notification for device batteries'''
@@ -987,7 +987,7 @@ class PowerPluginTestBatteryLevels(PowerPluginBase):
 
         self.check_for_logout(idle_delay + 2)
 
-        self.p_notify_log.check_line(b'You will soon log out because of inactivity.')
+        self.p_notify_log.check_line(b'You will soon log out because of inactivity')
 
     def test_forced_logout_inhibition(self):
         '''Test we don't force logout when inhibited'''

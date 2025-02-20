@@ -794,7 +794,10 @@ media_key_new_for_path (GsdMediaKeysManager *manager,
 
         key = media_key_new ();
         key->key_type = CUSTOM_KEY;
-        key->modes = GSD_ACTION_MODE_LAUNCHER;
+	if (g_settings_get_boolean (settings, "enable-in-lockscreen"))
+		key->modes = GSD_ACTION_MODE_SCRIPT;
+	else
+		key->modes = GSD_ACTION_MODE_LAUNCHER;
         key->custom_path = g_strdup (path);
         key->custom_command = command;
         key->grab_flags = META_KEY_BINDING_NONE;
@@ -1080,6 +1083,89 @@ do_media_action (GsdMediaKeysManager *manager,
         } else {
                 g_warning ("Could not find default application for '%s' mime-type", "audio/x-vorbis+ogg");
         }
+}
+
+static void
+gnome_session_logout_cb (GObject      *source_object,
+                         GAsyncResult *res,
+                         gpointer      user_data)
+{
+        GVariant *result;
+        GError *error = NULL;
+
+        result = g_dbus_proxy_call_finish (G_DBUS_PROXY (source_object),
+                                           res,
+                                           &error);
+        if (result == NULL) {
+                if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+                        g_warning ("Failed to call Logout on session manager: %s",
+                                   error->message);
+                g_error_free (error);
+        } else {
+                g_variant_unref (result);
+        }
+}
+
+static void
+gnome_session_logout (GsdMediaKeysManager *manager,
+                      guint                logout_mode)
+{
+	GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
+        GDBusProxy *proxy;
+
+        proxy = G_DBUS_PROXY (gnome_settings_bus_get_session_proxy ());
+
+        g_dbus_proxy_call (proxy,
+                           "Logout",
+                           g_variant_new ("(u)", logout_mode),
+                           G_DBUS_CALL_FLAGS_NONE,
+                           -1,
+                           priv->bus_cancellable,
+                           gnome_session_logout_cb,
+                           NULL);
+
+        g_object_unref (proxy);
+}
+
+static void
+gnome_session_reboot_cb (GObject      *source_object,
+                         GAsyncResult *res,
+                         gpointer      user_data)
+{
+        GVariant *result;
+        GError *error = NULL;
+
+        result = g_dbus_proxy_call_finish (G_DBUS_PROXY (source_object),
+                                           res,
+                                           &error);
+        if (result == NULL) {
+                if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+                        g_warning ("Failed to call Reboot on session manager: %s",
+                                   error->message);
+                g_error_free (error);
+        } else {
+                g_variant_unref (result);
+        }
+}
+
+static void
+gnome_session_reboot (GsdMediaKeysManager *manager)
+{
+	GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
+        GDBusProxy *proxy;
+
+        proxy = G_DBUS_PROXY (gnome_settings_bus_get_session_proxy ());
+
+        g_dbus_proxy_call (proxy,
+                           "Reboot",
+                           NULL,
+                           G_DBUS_CALL_FLAGS_NONE,
+                           -1,
+                           priv->bus_cancellable,
+                           gnome_session_reboot_cb,
+                           NULL);
+
+        g_object_unref (proxy);
 }
 
 static void
@@ -2251,17 +2337,17 @@ set_rfkill_complete (GObject      *object,
         if (data->bluetooth) {
                 if (data->target_state)
                         show_osd (data->manager, "bluetooth-disabled-symbolic",
-                                  _("Bluetooth disabled"), -1, NULL);
+                                  _("Bluetooth Disabled"), -1, NULL);
                 else
                         show_osd (data->manager, "bluetooth-active-symbolic",
-                                  _("Bluetooth enabled"), -1, NULL);
+                                  _("Bluetooth Enabled"), -1, NULL);
         } else {
                 if (data->target_state)
                         show_osd (data->manager, "airplane-mode-symbolic",
-                                  _("Airplane mode enabled"), -1, NULL);
+                                  _("Airplane Mode Enabled"), -1, NULL);
                 else
-                        show_osd (data->manager, "network-wireless-signal-excellent-symbolic",
-                                  _("Airplane mode disabled"), -1, NULL);
+                        show_osd (data->manager, "airplane-mode-disabled-symbolic",
+                                  _("Airplane Mode Disabled"), -1, NULL);
         }
 
 out:
@@ -2385,6 +2471,12 @@ do_action (GsdMediaKeysManager *manager,
                                  SOUND_ACTION_FLAG_IS_OUTPUT | SOUND_ACTION_FLAG_IS_PRECISE);
                 break;
         case LOGOUT_KEY:
+                gnome_session_logout (manager, 0);
+                break;
+        case REBOOT_KEY:
+                gnome_session_reboot (manager);
+                break;
+        case SHUTDOWN_KEY:
                 gnome_session_shutdown (manager);
                 break;
         case EJECT_KEY:

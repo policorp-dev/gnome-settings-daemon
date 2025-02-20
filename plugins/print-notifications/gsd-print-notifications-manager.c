@@ -56,6 +56,9 @@
 #define HAVE_CUPS_1_6 1
 #endif
 
+/* FIXME: https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/issues/860 */
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+
 #ifndef HAVE_CUPS_1_6
 #define ippGetStatusCode(ipp) ipp->request.status.status_code
 #define ippGetInteger(attr, element) attr->values[element].integer
@@ -313,7 +316,7 @@ show_notification (gpointer user_data)
 
         notification = notify_notification_new (data->primary_text,
                                                 data->secondary_text,
-                                                "printer-symbolic");
+                                                NULL);
 
         notify_notification_set_app_name (notification, _("Printers"));
         notify_notification_set_hint (notification,
@@ -562,7 +565,7 @@ check_job_for_authentication (gpointer userdata)
 
                         notification = notify_notification_new (primary_text,
                                                                 secondary_text,
-                                                                "printer-symbolic");
+                                                                NULL);
                         notify_notification_set_app_name (notification, _("Printers"));
                         notify_notification_set_hint_string (notification, "desktop-entry", "gnome-printers-panel");
                         notify_notification_add_action (notification,
@@ -945,7 +948,7 @@ process_cups_notification (GsdPrintNotificationsManager *manager,
 
                                                         notification = notify_notification_new ( _(statuses_first[j]),
                                                                                                 second_row,
-                                                                                                "printer-symbolic");
+                                                                                                NULL);
                                                         notify_notification_set_app_name (notification, _("Printers"));
                                                         notify_notification_set_hint_string (notification, "desktop-entry", "gnome-printers-panel");
                                                         notify_notification_set_hint (notification,
@@ -1036,7 +1039,7 @@ process_cups_notification (GsdPrintNotificationsManager *manager,
 
                                         notification = notify_notification_new (first_row,
                                                                                 second_row,
-                                                                                "printer-symbolic");
+                                                                                NULL);
                                         notify_notification_set_app_name (notification, _("Printers"));
                                         notify_notification_set_hint_string (notification, "desktop-entry", "gnome-printers-panel");
                                         notify_notification_set_hint (notification,
@@ -1080,7 +1083,7 @@ process_cups_notification (GsdPrintNotificationsManager *manager,
                 NotifyNotification *notification;
                 notification = notify_notification_new (primary_text,
                                                         secondary_text,
-                                                        "printer-symbolic");
+                                                        NULL);
                 notify_notification_set_app_name (notification, _("Printers"));
                 notify_notification_set_hint_string (notification, "desktop-entry", "gnome-printers-panel");
                 notify_notification_set_hint (notification, "transient", g_variant_new_boolean (TRUE));
@@ -1729,3 +1732,5 @@ gsd_print_notifications_manager_new (void)
 
         return GSD_PRINT_NOTIFICATIONS_MANAGER (manager_object);
 }
+
+G_GNUC_END_IGNORE_DEPRECATIONS

@@ -1,14 +1,9 @@
-gnome-settings-daemon (50.Policorp-1) stable; urgency=medium
+gnome-settings-daemon (48~beta-1) unstable; urgency=medium
 
-  * Aumentado a versao do pacote para forcar instalacao
+  * New upstream release
+  * Remove obsolete Breaks/Replaces
 
- -- Edson Juliano Drosdeck <edson@policorp.com.br>  Wed, 12 Feb 2025 12:33:36 +0000
-
-gnome-settings-daemon (47.Policorp-1) stable; urgency=medium
-
-  * Added  Policorp config patchs
-
- -- Edson Juliano Drosdeck <edson@policorp.com.br>  Wed, 15 Jan 2025 22:33:01 +0000
+ -- Jeremy Bícha <jbicha@ubuntu.com>  Tue, 04 Feb 2025 08:46:39 -0500
 
 gnome-settings-daemon (47.2-1) unstable; urgency=medium
 

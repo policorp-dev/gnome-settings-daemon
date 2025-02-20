@@ -1,7 +1,12 @@
 Source: gnome-settings-daemon
 Section: gnome
 Priority: optional
-Maintainer: Edson Juliano Drosdeck <edson@policorp.com.br>
+Maintainer: Debian GNOME Maintainers <pkg-gnome-maintainers@lists.alioth.debian.org>
+Uploaders: Amin Bandali <bandali@ubuntu.com>,
+           Gunnar Hjalmarsson <gunnarhj@debian.org>,
+           Jeremy Bícha <jbicha@ubuntu.com>,
+           Laurent Bigonville <bigon@debian.org>,
+           Marco Trevisan (Treviño) <marco@ubuntu.com>
 Build-Depends: debhelper-compat (= 13),
                dh-exec,
                dh-sequence-gnome,
@@ -46,6 +51,8 @@ Build-Depends: debhelper-compat (= 13),
                xserver-xorg-input-wacom [!hurd-any !s390 !s390x],
 Standards-Version: 4.7.0
 Homepage: https://gitlab.gnome.org/GNOME/gnome-settings-daemon
+Vcs-Git: https://salsa.debian.org/gnome-team/gnome-settings-daemon.git
+Vcs-Browser: https://salsa.debian.org/gnome-team/gnome-settings-daemon
 Rules-Requires-Root: no
 
 Package: gnome-settings-daemon
@@ -62,11 +69,7 @@ Recommends: iio-sensor-proxy,
             pkexec,
             x11-xserver-utils
 Suggests: usbguard
-Breaks: gnome-control-center (<< 1:41.4-2~),
-        gnome-shell (<< 47~rc),
-        libgtk-4-0 (<< 3.99.1~),
-        libmutter-6-0 (<< 3.37),
-        libmutter-7-0 (<< 3.39),
+Breaks: gnome-shell (<< 47~rc),
         mutter-common (<< 47~rc),
 Description: daemon handling the GNOME session settings
  This package contains the daemon which is responsible for setting the
@@ -86,8 +89,6 @@ Description: daemon handling the GNOME session settings
 Package: gnome-settings-daemon-common
 Architecture: all
 Depends: ${misc:Depends}
-Replaces: gnome-settings-daemon-schemas (<< 3.30.1.2-2~)
-Breaks: gnome-settings-daemon-schemas (<< 3.30.1.2-2~)
 Provides: gnome-settings-daemon-schemas (= ${source:Version})
 Description: daemon handling the GNOME session settings - common files
  This package contains GSettings schemas and other architecture-independent
