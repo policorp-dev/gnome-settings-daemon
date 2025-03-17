@@ -3,3 +3,4 @@ debian/01_debianize_xrdb.patch
 61-powerbutton-action.patch
 66-disable-automatic-night-light.patch
 fix-backlight-min-turn-off.patch
+POLICORP-fix-translation.patch
