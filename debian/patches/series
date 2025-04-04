@@ -4,3 +4,4 @@ debian/01_debianize_xrdb.patch
 66-disable-automatic-night-light.patch
 fix-backlight-min-turn-off.patch
 POLICORP-fix-translation.patch
+disable-idle-dim.patch
