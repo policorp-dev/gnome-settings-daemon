@@ -1,3 +1,9 @@
+gnome-settings-daemon (48.Policorp-4) stable; urgency=medium
+
+  * Correção de tradução do modo aviao
+
+ -- Edson Juliano Drosdeck <edson@policorp.com.br>  Mon, 08 Sep 2025 09:29:06 -0400
+
 gnome-settings-daemon (48.Policorp-3) stable; urgency=medium
 
   * disabled idle-dim
