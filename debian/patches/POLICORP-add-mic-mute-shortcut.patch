@@ -1,0 +1,13 @@
+Index: gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
+===================================================================
+--- gnome-settings-daemon.orig/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
++++ gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
+@@ -288,7 +288,7 @@
+     </key>
+ 
+     <key name="mic-mute" type="as">
+-      <default>['']</default>
++      <default>['&lt;Alt&gt;&lt;Super&gt;s']</default>
+       <summary>Microphone mute/unmute</summary>
+       <description>Binding to mute/unmute the microphone.</description>
+     </key>
