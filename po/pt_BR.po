@@ -1679,9 +1679,17 @@ msgstr "Bluetooth habilitado"
 msgid "Airplane mode enabled"
 msgstr "Modo avião habilitado"
 
+#: plugins/media-keys/gsd-media-keys-manager.c:2347
+msgid "Airplane Mode Enabled"
+msgstr "Modo Avião Habilitado"
+
 #: plugins/media-keys/gsd-media-keys-manager.c:2264
 msgid "Airplane mode disabled"
 msgstr "Modo avião desabilitado"
+
+#: plugins/media-keys/gsd-media-keys-manager.c:2350
+msgid "Airplane Mode Disabled"
+msgstr "Modo Avião Desabilitado"
 
 #: plugins/media-keys/gsd-media-keys-manager.c:2303
 msgid "Hardware Airplane Mode"
