@@ -7,7 +7,7 @@ Index: gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.media-keys.g
  
      <key name="mic-mute" type="as">
 -      <default>['']</default>
-+      <default>['&lt;Alt&gt;&lt;Super&gt;s']</default>
++      <default>['&lt;Alt&gt;&lt;Super&gt;k']</default>
        <summary>Microphone mute/unmute</summary>
        <description>Binding to mute/unmute the microphone.</description>
      </key>
