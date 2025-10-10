@@ -5,3 +5,4 @@ debian/01_debianize_xrdb.patch
 fix-backlight-min-turn-off.patch
 POLICORP-fix-translation.patch
 disable-idle-dim.patch
+POLICORP-add-mic-mute-shortcut.patch
