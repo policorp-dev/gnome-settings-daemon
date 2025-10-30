@@ -1,0 +1,13 @@
+Index: gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
+===================================================================
+--- gnome-settings-daemon.orig/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
++++ gnome-settings-daemon/data/org.gnome.settings-daemon.plugins.media-keys.gschema.xml.in
+@@ -502,7 +502,7 @@
+       <description>Static binding to skip to previous track.</description>
+     </key>
+     <key name="screensaver-static" type="as">
+-      <default>['XF86ScreenSaver']</default>
++      <default>'&lt;Super&gt;l'</default>
+       <summary>Lock screen</summary>
+       <description>Static binding to lock the screen.</description>
+     </key>
