@@ -1,3 +1,9 @@
+gnome-settings-daemon (48.Policorp-6) stable; urgency=medium
+
+  * Fix do super +l
+
+ -- Edson Juliano Drosdeck <edson@policorp.com.br>  Thu, 30 Oct 2025 19:01:54 +0000
+
 gnome-settings-daemon (48.Policorp-5) stable; urgency=medium
 
   * Enabled alt+super+k shortcut
