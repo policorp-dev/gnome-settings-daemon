@@ -19,8 +19,10 @@ sources = files(
   'gsd-wacom-oled.c',
   'main.c'
 )
+sources += main_helper_sources
 
 deps = plugins_deps + [
+  gsd_enums_dep,
   gtk_dep,
   libcommon_dep,
   m_dep,
@@ -32,11 +34,12 @@ if enable_wacom
 endif
 
 cflags += ['-DLIBEXECDIR="@0@"'.format(gsd_libexecdir)]
+cflags += ['-DUSE_GTK=1']
 
 executable(
   'gsd-' + plugin_name,
   sources,
-  include_directories: [top_inc, data_inc],
+  include_directories: top_inc,
   dependencies: deps,
   c_args: cflags,
   install: true,

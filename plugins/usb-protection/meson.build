@@ -2,8 +2,10 @@ sources = files(
   'gsd-usb-protection-manager.c',
   'main.c'
 )
+sources += main_helper_sources
 
 deps = plugins_deps + [
+  gsd_enums_dep,
   gsettings_desktop_dep,
   libcommon_dep,
   libnotify_dep,
@@ -12,7 +14,7 @@ deps = plugins_deps + [
 executable(
   'gsd-' + plugin_name,
   sources,
-  include_directories: [top_inc, common_inc, data_inc],
+  include_directories: [top_inc, common_inc],
   dependencies: deps,
   c_args: cflags,
   install: true,

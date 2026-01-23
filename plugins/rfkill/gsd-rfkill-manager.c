@@ -62,7 +62,7 @@
 
 struct _GsdRfkillManager
 {
-        GObject                  parent;
+        GsdApplication           parent;
 
         GDBusNodeInfo           *introspection_data;
         guint                    name_id;
@@ -119,18 +119,18 @@ static const gchar introspection_xml[] =
 
 static void     gsd_rfkill_manager_class_init  (GsdRfkillManagerClass *klass);
 static void     gsd_rfkill_manager_init        (GsdRfkillManager      *rfkill_manager);
-static void     gsd_rfkill_manager_finalize    (GObject                    *object);
+static void     gsd_rfkill_manager_startup     (GApplication          *app);
+static void     gsd_rfkill_manager_shutdown    (GApplication          *app);
 
-G_DEFINE_TYPE (GsdRfkillManager, gsd_rfkill_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE (GsdRfkillManager, gsd_rfkill_manager, GSD_TYPE_APPLICATION)
 
 static void
 gsd_rfkill_manager_class_init (GsdRfkillManagerClass *klass)
 {
-        GObjectClass   *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->finalize = gsd_rfkill_manager_finalize;
+        application_class->startup = gsd_rfkill_manager_startup;
+        application_class->shutdown = gsd_rfkill_manager_shutdown;
 }
 
 static void
@@ -776,10 +776,10 @@ on_mm_proxy_gotten (GObject      *source,
         g_object_unref (manager);
 }
 
-gboolean
-gsd_rfkill_manager_start (GsdRfkillManager *manager,
-                         GError         **error)
+static void
+gsd_rfkill_manager_startup (GApplication *application)
 {
+        GsdRfkillManager *manager = GSD_RFKILL_MANAGER (application);
         g_autoptr(GError) local_error = NULL;
 
         gnome_settings_profile_start (NULL);
@@ -826,14 +826,16 @@ gsd_rfkill_manager_start (GsdRfkillManager *manager,
                    (GAsyncReadyCallback) on_bus_gotten,
                    manager);
 
-        gnome_settings_profile_end (NULL);
+        G_APPLICATION_CLASS (gsd_rfkill_manager_parent_class)->startup (application);
 
-        return TRUE;
+        gnome_settings_profile_end (NULL);
 }
 
-void
-gsd_rfkill_manager_stop (GsdRfkillManager *manager)
+static void
+gsd_rfkill_manager_shutdown (GApplication *application)
 {
+        GsdRfkillManager *manager = GSD_RFKILL_MANAGER (application);
+
         g_debug ("Stopping rfkill manager");
 
         if (manager->name_id != 0) {
@@ -861,35 +863,6 @@ gsd_rfkill_manager_stop (GsdRfkillManager *manager)
         manager->wwan_interesting = FALSE;
 
         g_clear_pointer (&manager->chassis_type, g_free);
-}
 
-static void
-gsd_rfkill_manager_finalize (GObject *object)
-{
-        GsdRfkillManager *manager;
-
-        g_return_if_fail (object != NULL);
-        g_return_if_fail (GSD_IS_RFKILL_MANAGER (object));
-
-        manager = GSD_RFKILL_MANAGER (object);
-
-        g_return_if_fail (manager != NULL);
-
-        gsd_rfkill_manager_stop (manager);
-
-        G_OBJECT_CLASS (gsd_rfkill_manager_parent_class)->finalize (object);
-}
-
-GsdRfkillManager *
-gsd_rfkill_manager_new (void)
-{
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_RFKILL_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-        }
-
-        return GSD_RFKILL_MANAGER (manager_object);
+        G_APPLICATION_CLASS (gsd_rfkill_manager_parent_class)->shutdown (application);
 }

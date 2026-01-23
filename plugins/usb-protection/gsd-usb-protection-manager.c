@@ -31,7 +31,7 @@
 
 #include "gnome-settings-bus.h"
 #include "gnome-settings-profile.h"
-#include "gsd-enums.h"
+#include "gnome-settings-daemon/gsd-enums.h"
 #include "gsd-usb-protection-manager.h"
 
 #define PRIVACY_SETTINGS "org.gnome.desktop.privacy"
@@ -68,7 +68,7 @@
 
 struct _GsdUsbProtectionManager
 {
-        GObject             parent;
+        GsdApplication      parent;
         guint               start_idle_id;
         GDBusNodeInfo      *introspection_data;
         GSettings          *settings;
@@ -102,12 +102,7 @@ typedef enum {
         POLICY_APPLIED_ATTRIBUTES
 } UsbGuardPolicyApplied;
 
-
-static void gsd_usb_protection_manager_finalize (GObject *object);
-
-G_DEFINE_TYPE (GsdUsbProtectionManager, gsd_usb_protection_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE (GsdUsbProtectionManager, gsd_usb_protection_manager, GSD_TYPE_APPLICATION)
 
 #define GSD_DBUS_NAME "org.gnome.SettingsDaemon"
 #define GSD_DBUS_PATH "/org/gnome/SettingsDaemon"
@@ -1090,8 +1085,7 @@ usb_protection_proxy_ready (GObject      *source_object,
 
         manager->screensaver_proxy = gnome_settings_bus_get_screen_saver_proxy ();
         if (!manager->screensaver_proxy) {
-                if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-                        g_warning ("Failed to connect to screensaver service: %s", error->message);
+                g_warning ("Failed to connect to screensaver service");
                 g_clear_object (&manager->usb_protection);
                 return;
         }
@@ -1241,10 +1235,11 @@ start_usb_protection_idle_cb (GsdUsbProtectionManager *manager)
         return FALSE;
 }
 
-gboolean
-gsd_usb_protection_manager_start (GsdUsbProtectionManager *manager,
-                                  GError                 **error)
+static void
+gsd_usb_protection_manager_startup (GApplication *app)
 {
+        GsdUsbProtectionManager *manager = GSD_USB_PROTECTION_MANAGER (app);
+
         gnome_settings_profile_start (NULL);
 
         manager->start_idle_id = g_idle_add ((GSourceFunc) start_usb_protection_idle_cb, manager);
@@ -1259,13 +1254,16 @@ gsd_usb_protection_manager_start (GsdUsbProtectionManager *manager,
                    (GAsyncReadyCallback) on_bus_gotten,
                    manager);
 
+        G_APPLICATION_CLASS (gsd_usb_protection_manager_parent_class)->startup (app);
+
         gnome_settings_profile_end (NULL);
-        return TRUE;
 }
 
-void
-gsd_usb_protection_manager_stop (GsdUsbProtectionManager *manager)
+static void
+gsd_usb_protection_manager_shutdown (GApplication *app)
 {
+        GsdUsbProtectionManager *manager = GSD_USB_PROTECTION_MANAGER (app);
+
         g_debug ("Stopping USB protection manager");
 
         if (manager->cancellable != NULL) {
@@ -1292,43 +1290,20 @@ gsd_usb_protection_manager_stop (GsdUsbProtectionManager *manager)
         g_clear_object (&manager->usb_protection_devices);
         g_clear_object (&manager->usb_protection_policy);
         g_clear_object (&manager->screensaver_proxy);
+
+        G_APPLICATION_CLASS (gsd_usb_protection_manager_parent_class)->shutdown (app);
 }
 
 static void
 gsd_usb_protection_manager_class_init (GsdUsbProtectionManagerClass *klass)
 {
-        GObjectClass *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->finalize = gsd_usb_protection_manager_finalize;
+        application_class->startup = gsd_usb_protection_manager_startup;
+        application_class->shutdown = gsd_usb_protection_manager_shutdown;
 }
 
 static void
 gsd_usb_protection_manager_init (GsdUsbProtectionManager *manager)
 {
-}
-
-static void
-gsd_usb_protection_manager_finalize (GObject *object)
-{
-        GsdUsbProtectionManager *usb_protection_manager;
-
-        usb_protection_manager = GSD_USB_PROTECTION_MANAGER (object);
-        gsd_usb_protection_manager_stop (usb_protection_manager);
-
-        G_OBJECT_CLASS (gsd_usb_protection_manager_parent_class)->finalize (object);
-}
-
-GsdUsbProtectionManager *
-gsd_usb_protection_manager_new (void)
-{
-        g_debug ("Starting USB Protection");
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_USB_PROTECTION_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-        }
-
-        return GSD_USB_PROTECTION_MANAGER (manager_object);
 }

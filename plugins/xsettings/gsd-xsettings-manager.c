@@ -39,7 +39,7 @@
 #include <gtk/gtk.h>
 
 #include "gnome-settings-profile.h"
-#include "gsd-enums.h"
+#include "gnome-settings-daemon/gsd-enums.h"
 #include "gsd-xsettings-manager.h"
 #include "gsd-xsettings-gtk.h"
 #include "gnome-settings-bus.h"
@@ -274,7 +274,7 @@ struct _FixedEntry {
 
 struct _GsdXSettingsManager
 {
-        GObject            parent;
+        GsdApplication     parent;
 
         guint              start_idle_id;
         XSettingsManager  *manager;
@@ -305,31 +305,20 @@ struct _GsdXSettingsManager
         guint              notify_idle_id;
 
         GDBusNodeInfo     *introspection_data;
-        GDBusConnection   *dbus_connection;
         guint              gtk_settings_name_id;
-};
-
-#define GSD_XSETTINGS_ERROR gsd_xsettings_error_quark ()
-
-enum {
-        GSD_XSETTINGS_ERROR_INIT
 };
 
 static void     gsd_xsettings_manager_class_init  (GsdXSettingsManagerClass *klass);
 static void     gsd_xsettings_manager_init        (GsdXSettingsManager      *xsettings_manager);
-static void     gsd_xsettings_manager_finalize    (GObject                  *object);
+static gboolean gsd_xsettings_manager_dbus_register (GApplication    *app,
+                                                     GDBusConnection *connection,
+                                                     const char     *object_path,
+                                                     GError         **error);
+static void     gsd_xsettings_manager_dbus_unregister (GApplication    *app,
+                                                       GDBusConnection *connection,
+                                                       const char      *object_path);
 
-static void     register_manager_dbus             (GsdXSettingsManager *manager);
-
-G_DEFINE_TYPE (GsdXSettingsManager, gsd_xsettings_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
-
-static GQuark
-gsd_xsettings_error_quark (void)
-{
-        return g_quark_from_static_string ("gsd-xsettings-error-quark");
-}
+G_DEFINE_TYPE (GsdXSettingsManager, gsd_xsettings_manager, GSD_TYPE_APPLICATION)
 
 static void
 translate_bool_int (GsdXSettingsManager *manager,
@@ -561,6 +550,7 @@ static void
 send_dbus_event (GsdXSettingsManager *manager,
                  GtkSettingsMask      mask)
 {
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         GVariantBuilder props_builder;
         GVariant *props_changed = NULL;
 
@@ -586,7 +576,7 @@ send_dbus_event (GsdXSettingsManager *manager,
                                        g_variant_builder_end (&props_builder),
                                        g_variant_new_strv (NULL, 0));
 
-        g_dbus_connection_emit_signal (manager->dbus_connection,
+        g_dbus_connection_emit_signal (connection,
                                        NULL,
                                        GTK_SETTINGS_DBUS_PATH,
                                        "org.freedesktop.DBus.Properties",
@@ -612,13 +602,14 @@ get_dpi_from_gsettings (GsdXSettingsManager *manager)
 static int
 get_window_scale (GsdXSettingsManager *manager)
 {
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         g_autoptr(GError) error = NULL;
         g_autoptr(GVariant) res = NULL;
         g_autoptr(GVariant) ui_scaling_factor_variant = NULL;
         g_autoptr(GVariantIter) properties = NULL;
         int ui_scaling_factor = 1;
 
-        res = g_dbus_connection_call_sync (manager->dbus_connection,
+        res = g_dbus_connection_call_sync (connection,
                                            "org.gnome.Mutter.X11",
                                            "/org/gnome/Mutter/X11",
                                            "org.freedesktop.DBus.Properties",
@@ -1110,12 +1101,13 @@ on_mutter_x11_name_appeared_handler (GDBusConnection *connection,
 static void
 animations_enabled_changed (GsdXSettingsManager *manager)
 {
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         g_autoptr(GError) error = NULL;
         g_autoptr(GVariant) res = NULL;
         g_autoptr(GVariant) animations_enabled_variant = NULL;
         gboolean animations_enabled;
 
-        res = g_dbus_connection_call_sync (manager->dbus_connection,
+        res = g_dbus_connection_call_sync (connection,
                                            "org.gnome.Shell.Introspect",
                                            "/org/gnome/Shell/Introspect",
                                            "org.freedesktop.DBus.Properties",
@@ -1350,10 +1342,11 @@ set_devicepresence_handler (GsdXSettingsManager *manager)
         manager->user_seat = user_seat;
 }
 
-gboolean
-gsd_xsettings_manager_start (GsdXSettingsManager *manager,
-                             GError             **error)
+static void
+gsd_xsettings_manager_startup (GApplication *app)
 {
+        GsdXSettingsManager *manager = GSD_XSETTINGS_MANAGER (app);
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         GVariant    *overrides;
         guint        i;
         GList       *list, *l;
@@ -1365,10 +1358,9 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
         migrate_settings ();
 
         if (!setup_xsettings_managers (manager)) {
-                g_set_error (error, GSD_XSETTINGS_ERROR,
-                             GSD_XSETTINGS_ERROR_INIT,
-                             "Could not initialize xsettings manager.");
-                return FALSE;
+                g_printerr ("Could not initialize xsettings manager.");
+                g_application_release (app);
+                return;
         }
 
 	set_devicepresence_handler (manager);
@@ -1379,7 +1371,7 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
         update_gtk_im_module (manager);
 
         manager->monitors_changed_id =
-                g_dbus_connection_signal_subscribe (manager->dbus_connection,
+                g_dbus_connection_signal_subscribe (connection,
                                                     "org.gnome.Mutter.X11",
                                                     "org.freedesktop.DBus.Properties",
                                                     "PropertiesChanged",
@@ -1390,7 +1382,7 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
                                                     manager,
                                                     NULL);
         manager->display_config_watch_id =
-                g_bus_watch_name_on_connection (manager->dbus_connection,
+                g_bus_watch_name_on_connection (connection,
                                                 "org.gnome.Mutter.X11",
                                                 G_BUS_NAME_WATCHER_FLAGS_NONE,
                                                 on_mutter_x11_name_appeared_handler,
@@ -1399,7 +1391,7 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
                                                 NULL);
 
         manager->introspect_properties_changed_id =
-                g_dbus_connection_signal_subscribe (manager->dbus_connection,
+                g_dbus_connection_signal_subscribe (connection,
                                                     "org.gnome.Shell.Introspect",
                                                     "org.freedesktop.DBus.Properties",
                                                     "PropertiesChanged",
@@ -1410,7 +1402,7 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
                                                     manager,
                                                     NULL);
         manager->shell_introspect_watch_id =
-                g_bus_watch_name_on_connection (manager->dbus_connection,
+                g_bus_watch_name_on_connection (connection,
                                                 "org.gnome.Shell.Introspect",
                                                 G_BUS_NAME_WATCHER_FLAGS_NONE,
                                                 on_shell_introspect_name_appeared_handler,
@@ -1496,8 +1488,6 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
         if (gnome_settings_is_wayland ())
                 launch_xwayland_services ();
 
-        register_manager_dbus (manager);
-
         start_fontconfig_monitor (manager);
 
         overrides = g_settings_get_value (manager->plugin_settings, XSETTINGS_OVERRIDE_KEY);
@@ -1505,19 +1495,26 @@ gsd_xsettings_manager_start (GsdXSettingsManager *manager,
         queue_notify (manager);
         g_variant_unref (overrides);
 
+        G_APPLICATION_CLASS (gsd_xsettings_manager_parent_class)->startup (app);
 
         gnome_settings_profile_end (NULL);
-
-        return TRUE;
 }
 
-void
-gsd_xsettings_manager_stop (GsdXSettingsManager *manager)
+static void
+gsd_xsettings_manager_shutdown (GApplication *app)
 {
+        GsdXSettingsManager *manager = GSD_XSETTINGS_MANAGER (app);
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
+
         g_debug ("Stopping xsettings manager");
 
+        if (manager->notify_idle_id) {
+                g_source_remove (manager->notify_idle_id);
+                manager->notify_idle_id = 0;
+        }
+
         if (manager->introspect_properties_changed_id) {
-                g_dbus_connection_signal_unsubscribe (manager->dbus_connection,
+                g_dbus_connection_signal_unsubscribe (connection,
                                                       manager->introspect_properties_changed_id);
                 manager->introspect_properties_changed_id = 0;
         }
@@ -1528,7 +1525,7 @@ gsd_xsettings_manager_stop (GsdXSettingsManager *manager)
         }
 
         if (manager->monitors_changed_id) {
-                g_dbus_connection_signal_unsubscribe (manager->dbus_connection,
+                g_dbus_connection_signal_unsubscribe (connection,
                                                       manager->monitors_changed_id);
                 manager->monitors_changed_id = 0;
         }
@@ -1552,11 +1549,6 @@ gsd_xsettings_manager_stop (GsdXSettingsManager *manager)
                 g_signal_handlers_disconnect_by_data (manager->plugin_settings, manager);
                 g_object_unref (manager->plugin_settings);
                 manager->plugin_settings = NULL;
-        }
-
-        if (manager->gtk_settings_name_id > 0) {
-                g_bus_unown_name (manager->gtk_settings_name_id);
-                manager->gtk_settings_name_id = 0;
         }
 
         if (manager->fontconfig_monitor != NULL) {
@@ -1583,47 +1575,26 @@ gsd_xsettings_manager_stop (GsdXSettingsManager *manager)
         }
 
         g_clear_object (&manager->interface_settings);
+
+        g_clear_handle_id (&manager->start_idle_id, g_source_remove);
+
+        G_APPLICATION_CLASS (gsd_xsettings_manager_parent_class)->shutdown (app);
 }
 
 static void
 gsd_xsettings_manager_class_init (GsdXSettingsManagerClass *klass)
 {
-        GObjectClass *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->finalize = gsd_xsettings_manager_finalize;
+        application_class->startup = gsd_xsettings_manager_startup;
+        application_class->shutdown = gsd_xsettings_manager_shutdown;
+        application_class->dbus_register = gsd_xsettings_manager_dbus_register;
+        application_class->dbus_unregister = gsd_xsettings_manager_dbus_unregister;
 }
 
 static void
 gsd_xsettings_manager_init (GsdXSettingsManager *manager)
 {
-        GError *error = NULL;
-
-        manager->dbus_connection = g_bus_get_sync (G_BUS_TYPE_SESSION,
-                                                         NULL, &error);
-        if (!manager->dbus_connection)
-                g_error ("Failed to get session bus: %s", error->message);
-}
-
-static void
-gsd_xsettings_manager_finalize (GObject *object)
-{
-        GsdXSettingsManager *xsettings_manager;
-
-        g_return_if_fail (object != NULL);
-        g_return_if_fail (GSD_IS_XSETTINGS_MANAGER (object));
-
-        xsettings_manager = GSD_XSETTINGS_MANAGER (object);
-
-        g_return_if_fail (xsettings_manager != NULL);
-
-        gsd_xsettings_manager_stop (xsettings_manager);
-
-        if (xsettings_manager->start_idle_id != 0)
-                g_source_remove (xsettings_manager->start_idle_id);
-
-        g_clear_object (&xsettings_manager->dbus_connection);
-
-        G_OBJECT_CLASS (gsd_xsettings_manager_parent_class)->finalize (object);
 }
 
 static GVariant *
@@ -1658,15 +1629,24 @@ static const GDBusInterfaceVTable interface_vtable =
         NULL
 };
 
-static void
-register_manager_dbus (GsdXSettingsManager *manager)
+static gboolean
+gsd_xsettings_manager_dbus_register (GApplication    *app,
+                                     GDBusConnection *connection,
+                                     const char     *object_path,
+                                     GError         **error)
 {
-        g_assert (manager->dbus_connection != NULL);
+        GsdXSettingsManager *manager = GSD_XSETTINGS_MANAGER (app);
+
+        if (!G_APPLICATION_CLASS (gsd_xsettings_manager_parent_class)->dbus_register (app,
+                                                                                      connection,
+                                                                                      object_path,
+                                                                                      error))
+                return FALSE;
 
         manager->introspection_data = g_dbus_node_info_new_for_xml (introspection_xml, NULL);
         g_assert (manager->introspection_data != NULL);
 
-        g_dbus_connection_register_object (manager->dbus_connection,
+        g_dbus_connection_register_object (connection,
                                            GTK_SETTINGS_DBUS_PATH,
                                            manager->introspection_data->interfaces[0],
                                            &interface_vtable,
@@ -1674,22 +1654,26 @@ register_manager_dbus (GsdXSettingsManager *manager)
                                            NULL,
                                            NULL);
 
-        manager->gtk_settings_name_id = g_bus_own_name_on_connection (manager->dbus_connection,
+        manager->gtk_settings_name_id = g_bus_own_name_on_connection (connection,
                                                                       GTK_SETTINGS_DBUS_NAME,
                                                                       G_BUS_NAME_OWNER_FLAGS_NONE,
                                                                       NULL, NULL, NULL, NULL);
+
+        return TRUE;
 }
 
-GsdXSettingsManager *
-gsd_xsettings_manager_new (void)
+static void
+gsd_xsettings_manager_dbus_unregister (GApplication    *app,
+                                       GDBusConnection *connection,
+                                       const char      *object_path)
 {
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_XSETTINGS_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-        }
+        GsdXSettingsManager *manager = GSD_XSETTINGS_MANAGER (app);
 
-        return GSD_XSETTINGS_MANAGER (manager_object);
+        g_clear_pointer (&manager->introspection_data, g_dbus_node_info_unref);
+
+        g_clear_handle_id (&manager->gtk_settings_name_id, g_bus_unown_name);
+
+        G_APPLICATION_CLASS (gsd_xsettings_manager_parent_class)->dbus_unregister (app,
+                                                                                   connection,
+                                                                                   object_path);
 }

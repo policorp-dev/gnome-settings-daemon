@@ -4,6 +4,7 @@ sources = files(
   'gsd-power-manager.c',
   'main.c'
 )
+sources += main_helper_sources
 
 deps = plugins_deps + [
   libcanberra_gtk_dep,
@@ -11,6 +12,7 @@ deps = plugins_deps + [
   libnotify_dep,
   gio_unix_dep,
   gnome_desktop_dep,
+  gsd_enums_dep,
   m_dep,
   upower_glib_dep,
   x11_dep,
@@ -29,11 +31,12 @@ if host_is_linux
 endif
 
 cflags += ['-DLIBEXECDIR="@0@"'.format(gsd_libexecdir)]
+cflags += ['-DUSE_GTK=1']
 
 gsd_power = executable(
   'gsd-' + plugin_name,
   sources,
-  include_directories: [top_inc, data_inc],
+  include_directories: top_inc,
   dependencies: deps,
   c_args: cflags,
   install: true,

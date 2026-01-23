@@ -32,7 +32,7 @@
 
 struct _GsdDatetimeManager
 {
-        GObject parent;
+        GsdApplication parent;
 
         GSettings *settings;
         GsdTimezoneMonitor *timezone_monitor;
@@ -41,11 +41,8 @@ struct _GsdDatetimeManager
 
 static void gsd_datetime_manager_class_init (GsdDatetimeManagerClass *klass);
 static void gsd_datetime_manager_init (GsdDatetimeManager *manager);
-static void gsd_datetime_manager_finalize (GObject *object);
 
-G_DEFINE_TYPE (GsdDatetimeManager, gsd_datetime_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE (GsdDatetimeManager, gsd_datetime_manager, GSD_TYPE_APPLICATION)
 
 static void
 notification_closed_cb (NotifyNotification *n,
@@ -148,10 +145,11 @@ auto_timezone_settings_changed_cb (GSettings          *settings,
         }
 }
 
-gboolean
-gsd_datetime_manager_start (GsdDatetimeManager *self,
-                            GError            **error)
+static void
+gsd_datetime_manager_startup (GApplication *app)
 {
+        GsdDatetimeManager *self = GSD_DATETIME_MANAGER (app);
+
         g_debug ("Starting datetime manager");
         gnome_settings_profile_start (NULL);
 
@@ -161,14 +159,16 @@ gsd_datetime_manager_start (GsdDatetimeManager *self,
                           G_CALLBACK (auto_timezone_settings_changed_cb), self);
         auto_timezone_settings_changed_cb (self->settings, AUTO_TIMEZONE_KEY, self);
 
-        gnome_settings_profile_end (NULL);
+        G_APPLICATION_CLASS (gsd_datetime_manager_parent_class)->startup (app);
 
-        return TRUE;
+        gnome_settings_profile_end (NULL);
 }
 
-void
-gsd_datetime_manager_stop (GsdDatetimeManager *self)
+static void
+gsd_datetime_manager_shutdown (GApplication *app)
 {
+        GsdDatetimeManager *self = GSD_DATETIME_MANAGER (app);
+
         g_debug ("Stopping datetime manager");
 
         g_clear_object (&self->settings);
@@ -180,14 +180,17 @@ gsd_datetime_manager_stop (GsdDatetimeManager *self)
                                                       self);
                 g_clear_object (&self->notification);
         }
+
+        G_APPLICATION_CLASS (gsd_datetime_manager_parent_class)->shutdown (app);
 }
 
 static void
 gsd_datetime_manager_class_init (GsdDatetimeManagerClass *klass)
 {
-        GObjectClass *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->finalize = gsd_datetime_manager_finalize;
+        application_class->startup = gsd_datetime_manager_startup;
+        application_class->shutdown = gsd_datetime_manager_shutdown;
 
         notify_init ("gnome-settings-daemon");
 }
@@ -195,35 +198,4 @@ gsd_datetime_manager_class_init (GsdDatetimeManagerClass *klass)
 static void
 gsd_datetime_manager_init (GsdDatetimeManager *manager)
 {
-}
-
-static void
-gsd_datetime_manager_finalize (GObject *object)
-{
-        GsdDatetimeManager *manager;
-
-        g_return_if_fail (object != NULL);
-        g_return_if_fail (GSD_IS_DATETIME_MANAGER (object));
-
-        manager = GSD_DATETIME_MANAGER (object);
-
-        g_return_if_fail (manager != NULL);
-
-        gsd_datetime_manager_stop (manager);
-
-        G_OBJECT_CLASS (gsd_datetime_manager_parent_class)->finalize (object);
-}
-
-GsdDatetimeManager *
-gsd_datetime_manager_new (void)
-{
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_DATETIME_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-        }
-
-        return GSD_DATETIME_MANAGER (manager_object);
 }

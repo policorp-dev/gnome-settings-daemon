@@ -20,18 +20,13 @@
 #ifndef __GSD_KEYBOARD_MANAGER_H
 #define __GSD_KEYBOARD_MANAGER_H
 
-#include <glib-object.h>
+#include "gsd-application.h"
 
 G_BEGIN_DECLS
 
 #define GSD_TYPE_KEYBOARD_MANAGER         (gsd_keyboard_manager_get_type ())
 
-G_DECLARE_FINAL_TYPE (GsdKeyboardManager, gsd_keyboard_manager, GSD, KEYBOARD_MANAGER, GObject)
-
-GsdKeyboardManager *       gsd_keyboard_manager_new                 (void);
-gboolean                gsd_keyboard_manager_start               (GsdKeyboardManager *manager,
-                                                               GError         **error);
-void                    gsd_keyboard_manager_stop                (GsdKeyboardManager *manager);
+G_DECLARE_FINAL_TYPE (GsdKeyboardManager, gsd_keyboard_manager, GSD, KEYBOARD_MANAGER, GsdApplication)
 
 G_END_DECLS
 

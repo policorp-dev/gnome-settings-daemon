@@ -6,6 +6,11 @@ sources = files(
   'gsd-shell-helper.c'
 )
 
+main_helper_sources = files(
+  'gsd-application.c',
+  'gsd-main-helper.c',
+)
+
 resource_data = files('gtk.css')
 
 sources += gnome.compile_resources(
@@ -31,7 +36,7 @@ endif
 libcommon = static_library(
   plugin_name,
   sources: sources,
-  include_directories: [top_inc, data_inc],
+  include_directories: top_inc,
   dependencies: deps,
   c_args: cflags,
   link_args: ldflags

@@ -5,6 +5,8 @@ sources = files(
   'mpris-controller.c'
 )
 
+sources += main_helper_sources
+
 marshal = 'gsd-marshal'
 
 sources += gnome.genmarshal(
@@ -23,6 +25,7 @@ sources += gnome.gdbus_codegen(
 
 deps = plugins_deps + [
   gio_unix_dep,
+  gsd_enums_dep,
   gsettings_desktop_dep,
   libcanberra_gtk_dep,
   libcommon_dep,
@@ -37,10 +40,12 @@ if enable_gudev
   deps += gudev_dep
 endif
 
+cflags += ['-DUSE_GTK=1']
+
 executable(
   'gsd-' + plugin_name,
   sources,
-  include_directories: [top_inc, data_inc],
+  include_directories: top_inc,
   dependencies: deps,
   c_args: cflags,
   install: true,

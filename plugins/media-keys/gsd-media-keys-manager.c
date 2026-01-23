@@ -59,7 +59,7 @@
 #include "shortcuts-list.h"
 #include "shell-key-grabber.h"
 #include "gsd-input-helper.h"
-#include "gsd-enums.h"
+#include "gnome-settings-daemon/gsd-enums.h"
 #include "gsd-shell-helper.h"
 
 #include <canberra.h>
@@ -215,7 +215,6 @@ typedef struct
         gint             inhibit_suspend_fd;
         gboolean         inhibit_suspend_taken;
 
-        GDBusConnection *connection;
         GCancellable    *bus_cancellable;
 
         guint            start_idle_id;
@@ -227,7 +226,13 @@ typedef struct
 static void     gsd_media_keys_manager_class_init  (GsdMediaKeysManagerClass *klass);
 static void     gsd_media_keys_manager_init        (GsdMediaKeysManager      *media_keys_manager);
 static void     gsd_media_keys_manager_finalize    (GObject                  *object);
-static void     register_manager                   (GsdMediaKeysManager      *manager);
+static gboolean gsd_media_keys_manager_dbus_register (GApplication    *app,
+                                                      GDBusConnection *connection,
+                                                      const char      *object_path,
+                                                      GError         **error);
+static void     gsd_media_keys_manager_dbus_unregister (GApplication    *app,
+                                                        GDBusConnection *connection,
+                                                        const char      *object_path);
 static void     custom_binding_changed             (GSettings           *settings,
                                                     const char          *settings_key,
                                                     GsdMediaKeysManager *manager);
@@ -237,9 +242,7 @@ static void     keys_sync_queue                    (GsdMediaKeysManager *manager
 static void     keys_sync_continue                 (GsdMediaKeysManager *manager);
 
 
-G_DEFINE_TYPE_WITH_PRIVATE (GsdMediaKeysManager, gsd_media_keys_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE_WITH_PRIVATE (GsdMediaKeysManager, gsd_media_keys_manager, GSD_TYPE_APPLICATION)
 
 static void
 media_key_unref (MediaKey *key)
@@ -298,12 +301,12 @@ static void
 set_launch_context_env (GsdMediaKeysManager *manager,
 			GAppLaunchContext   *launch_context)
 {
-	GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
 	GError *error = NULL;
 	GVariant *variant, *item;
 	GVariantIter *iter;
 
-	variant = g_dbus_connection_call_sync (priv->connection,
+	variant = g_dbus_connection_call_sync (connection,
 					       GNOME_KEYRING_DBUS_NAME,
 					       GNOME_KEYRING_DBUS_PATH,
 					       GNOME_KEYRING_DBUS_INTERFACE,
@@ -978,7 +981,7 @@ app_launched_cb (GAppLaunchContext *context,
                  gpointer           user_data)
 {
         GsdMediaKeysManager *manager = GSD_MEDIA_KEYS_MANAGER (user_data);
-        GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         gint32 pid;
         const gchar *app_name;
 
@@ -993,7 +996,7 @@ app_launched_cb (GAppLaunchContext *context,
         gnome_start_systemd_scope (app_name,
                                    pid,
                                    NULL,
-                                   priv->connection,
+                                   connection,
                                    NULL, NULL, NULL);
 }
 
@@ -2210,6 +2213,7 @@ do_brightness_action (GsdMediaKeysManager *manager,
                       MediaKeyType type)
 {
         GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         const char *cmd;
         GDBusProxy *proxy;
 
@@ -2228,7 +2232,7 @@ do_brightness_action (GsdMediaKeysManager *manager,
                 g_assert_not_reached ();
         }
 
-        if (priv->connection == NULL ||
+        if (connection == NULL ||
             proxy == NULL) {
                 g_warning ("No existing D-Bus connection trying to handle power keys");
                 return;
@@ -3089,10 +3093,10 @@ migrate_keybinding_settings (void)
                                     binding_entries, G_N_ELEMENTS (binding_entries));
 }
 
-gboolean
-gsd_media_keys_manager_start (GsdMediaKeysManager *manager,
-                              GError             **error)
+static void
+gsd_media_keys_manager_startup (GApplication *app)
 {
+        GsdMediaKeysManager *manager = GSD_MEDIA_KEYS_MANAGER (app);
         GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
         const char * const subsystems[] = { "input", "usb", "sound", NULL };
 
@@ -3108,16 +3112,15 @@ gsd_media_keys_manager_start (GsdMediaKeysManager *manager,
         priv->start_idle_id = g_idle_add ((GSourceFunc) start_media_keys_idle_cb, manager);
         g_source_set_name_by_id (priv->start_idle_id, "[gnome-settings-daemon] start_media_keys_idle_cb");
 
-        register_manager (manager_object);
+        G_APPLICATION_CLASS (gsd_media_keys_manager_parent_class)->startup (app);
 
         gnome_settings_profile_end (NULL);
-
-        return TRUE;
 }
 
-void
-gsd_media_keys_manager_stop (GsdMediaKeysManager *manager)
+static void
+gsd_media_keys_manager_shutdown (GApplication *app)
 {
+        GsdMediaKeysManager *manager = GSD_MEDIA_KEYS_MANAGER (app);
         GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
 
         g_debug ("Stopping media_keys manager");
@@ -3125,12 +3128,6 @@ gsd_media_keys_manager_stop (GsdMediaKeysManager *manager)
         if (priv->start_idle_id != 0) {
                 g_source_remove (priv->start_idle_id);
                 priv->start_idle_id = 0;
-        }
-
-        if (priv->bus_cancellable != NULL) {
-                g_cancellable_cancel (priv->bus_cancellable);
-                g_object_unref (priv->bus_cancellable);
-                priv->bus_cancellable = NULL;
         }
 
         if (priv->gtksettings != NULL) {
@@ -3170,14 +3167,9 @@ gsd_media_keys_manager_stop (GsdMediaKeysManager *manager)
         g_clear_object (&priv->settings);
         g_clear_object (&priv->sound_settings);
         g_clear_object (&priv->power_settings);
-        g_clear_object (&priv->power_proxy);
-        g_clear_object (&priv->power_screen_proxy);
-        g_clear_object (&priv->power_keyboard_proxy);
-        g_clear_object (&priv->composite_device);
         g_clear_object (&priv->mpris_controller);
         g_clear_object (&priv->iio_sensor_proxy);
         g_clear_pointer (&priv->chassis_type, g_free);
-        g_clear_object (&priv->connection);
 
         if (priv->keys_sync_data) {
                 /* Cancel ongoing sync. */
@@ -3229,6 +3221,8 @@ gsd_media_keys_manager_stop (GsdMediaKeysManager *manager)
                 g_bus_unwatch_name (priv->audio_selection_watch_id);
         priv->audio_selection_watch_id = 0;
         clear_audio_selection (manager);
+
+        G_APPLICATION_CLASS (gsd_media_keys_manager_parent_class)->shutdown (app);
 }
 
 static void
@@ -3377,8 +3371,14 @@ static void
 gsd_media_keys_manager_class_init (GsdMediaKeysManagerClass *klass)
 {
         GObjectClass   *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
         object_class->finalize = gsd_media_keys_manager_finalize;
+
+        application_class->startup = gsd_media_keys_manager_startup;
+        application_class->shutdown = gsd_media_keys_manager_shutdown;
+        application_class->dbus_register = gsd_media_keys_manager_dbus_register;
+        application_class->dbus_unregister = gsd_media_keys_manager_dbus_unregister;
 }
 
 static void
@@ -3478,8 +3478,6 @@ gsd_media_keys_manager_finalize (GObject *object)
         GsdMediaKeysManager *manager = GSD_MEDIA_KEYS_MANAGER (object);
         GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
 
-        gsd_media_keys_manager_stop (manager);
-
         if (priv->inhibit_keys_fd != -1)
                 close (priv->inhibit_keys_fd);
 
@@ -3568,26 +3566,25 @@ power_keyboard_ready_cb (GObject             *source_object,
                           manager);
 }
 
-static void
-on_bus_gotten (GObject             *source_object,
-               GAsyncResult        *res,
-               GsdMediaKeysManager *manager)
+static gboolean
+gsd_media_keys_manager_dbus_register (GApplication    *app,
+                                      GDBusConnection *connection,
+                                      const char     *object_path,
+                                      GError         **error)
 {
+        GsdMediaKeysManager *manager = GSD_MEDIA_KEYS_MANAGER (app);
         GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
-        GDBusConnection *connection;
-        GError *error = NULL;
         UpClient *up_client;
 
-        connection = g_bus_get_finish (res, &error);
-        if (connection == NULL) {
-                if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-                        g_warning ("Could not get session bus: %s", error->message);
-                g_error_free (error);
-                return;
-        }
-        priv->connection = connection;
+        if (!G_APPLICATION_CLASS (gsd_media_keys_manager_parent_class)->dbus_register (app,
+                                                                                       connection,
+                                                                                       object_path,
+                                                                                       error))
+                return FALSE;
 
-        g_dbus_proxy_new (priv->connection,
+        priv->bus_cancellable = g_cancellable_new ();
+
+        g_dbus_proxy_new (connection,
                           G_DBUS_PROXY_FLAGS_NONE,
                           NULL,
                           GSD_DBUS_NAME ".Power",
@@ -3597,7 +3594,7 @@ on_bus_gotten (GObject             *source_object,
                           (GAsyncReadyCallback) power_ready_cb,
                           manager);
 
-        g_dbus_proxy_new (priv->connection,
+        g_dbus_proxy_new (connection,
                           G_DBUS_PROXY_FLAGS_NONE,
                           NULL,
                           GSD_DBUS_NAME ".Power",
@@ -3607,7 +3604,7 @@ on_bus_gotten (GObject             *source_object,
                           (GAsyncReadyCallback) power_screen_ready_cb,
                           manager);
 
-        g_dbus_proxy_new (priv->connection,
+        g_dbus_proxy_new (connection,
                           G_DBUS_PROXY_FLAGS_NONE,
                           NULL,
                           GSD_DBUS_NAME ".Power",
@@ -3620,30 +3617,29 @@ on_bus_gotten (GObject             *source_object,
         up_client = up_client_new ();
         priv->composite_device = up_client_get_display_device (up_client);
         g_object_unref (up_client);
+
+        return TRUE;
 }
 
 static void
-register_manager (GsdMediaKeysManager *manager)
+gsd_media_keys_manager_dbus_unregister (GApplication    *app,
+                                        GDBusConnection *connection,
+                                        const char      *object_path)
 {
+        GsdMediaKeysManager *manager = GSD_MEDIA_KEYS_MANAGER (app);
         GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
 
-        priv->bus_cancellable = g_cancellable_new ();
-        g_bus_get (G_BUS_TYPE_SESSION,
-                   priv->bus_cancellable,
-                   (GAsyncReadyCallback) on_bus_gotten,
-                   manager);
-}
-
-GsdMediaKeysManager *
-gsd_media_keys_manager_new (void)
-{
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_MEDIA_KEYS_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
+        if (priv->bus_cancellable != NULL) {
+                g_cancellable_cancel (priv->bus_cancellable);
+                g_clear_object (&priv->bus_cancellable);
         }
 
-        return GSD_MEDIA_KEYS_MANAGER (manager_object);
+        g_clear_object (&priv->power_proxy);
+        g_clear_object (&priv->power_screen_proxy);
+        g_clear_object (&priv->power_keyboard_proxy);
+        g_clear_object (&priv->composite_device);
+
+        G_APPLICATION_CLASS (gsd_media_keys_manager_parent_class)->dbus_unregister (app,
+                                                                                    connection,
+                                                                                    object_path);
 }

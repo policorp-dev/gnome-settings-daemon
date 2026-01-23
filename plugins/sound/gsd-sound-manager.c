@@ -39,7 +39,7 @@
 
 struct _GsdSoundManager
 {
-        GObject    parent;
+        GsdApplication parent;
 
         GSettings *settings;
         GList     *monitors;
@@ -48,11 +48,8 @@ struct _GsdSoundManager
 
 static void gsd_sound_manager_class_init (GsdSoundManagerClass *klass);
 static void gsd_sound_manager_init (GsdSoundManager *sound_manager);
-static void gsd_sound_manager_finalize (GObject *object);
 
-G_DEFINE_TYPE (GsdSoundManager, gsd_sound_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE (GsdSoundManager, gsd_sound_manager, GSD_TYPE_APPLICATION)
 
 static void
 sample_info_cb (pa_context *c, const pa_sample_info *i, int eol, void *userdata)
@@ -250,10 +247,10 @@ register_directory_callback (GsdSoundManager *manager,
         return succ;
 }
 
-gboolean
-gsd_sound_manager_start (GsdSoundManager *manager,
-                         GError **error)
+static void
+gsd_sound_manager_startup (GApplication *app)
 {
+        GsdSoundManager *manager = GSD_SOUND_MANAGER (app);
         guint i;
         const gchar * const * dirs;
         char *p;
@@ -280,14 +277,16 @@ gsd_sound_manager_start (GsdSoundManager *manager,
                 g_free (p);
         }
 
-        gnome_settings_profile_end (NULL);
+        G_APPLICATION_CLASS (gsd_sound_manager_parent_class)->startup (app);
 
-        return TRUE;
+        gnome_settings_profile_end (NULL);
 }
 
-void
-gsd_sound_manager_stop (GsdSoundManager *manager)
+static void
+gsd_sound_manager_shutdown (GApplication *app)
 {
+        GsdSoundManager *manager = GSD_SOUND_MANAGER (app);
+
         g_debug ("Stopping sound manager");
 
         if (manager->settings != NULL) {
@@ -305,58 +304,20 @@ gsd_sound_manager_stop (GsdSoundManager *manager)
                 g_object_unref (manager->monitors->data);
                 manager->monitors = g_list_delete_link (manager->monitors, manager->monitors);
         }
-}
 
-static void
-gsd_sound_manager_dispose (GObject *object)
-{
-        GsdSoundManager *manager;
-
-        manager = GSD_SOUND_MANAGER (object);
-
-        gsd_sound_manager_stop (manager);
-
-        G_OBJECT_CLASS (gsd_sound_manager_parent_class)->dispose (object);
+        G_APPLICATION_CLASS (gsd_sound_manager_parent_class)->shutdown (app);
 }
 
 static void
 gsd_sound_manager_class_init (GsdSoundManagerClass *klass)
 {
-        GObjectClass *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->dispose = gsd_sound_manager_dispose;
-        object_class->finalize = gsd_sound_manager_finalize;
+        application_class->startup = gsd_sound_manager_startup;
+        application_class->shutdown = gsd_sound_manager_shutdown;
 }
 
 static void
 gsd_sound_manager_init (GsdSoundManager *manager)
 {
-}
-
-static void
-gsd_sound_manager_finalize (GObject *object)
-{
-        GsdSoundManager *sound_manager;
-
-        g_return_if_fail (object != NULL);
-        g_return_if_fail (GSD_IS_SOUND_MANAGER (object));
-
-        sound_manager = GSD_SOUND_MANAGER (object);
-
-        g_return_if_fail (sound_manager);
-
-        G_OBJECT_CLASS (gsd_sound_manager_parent_class)->finalize (object);
-}
-
-GsdSoundManager *
-gsd_sound_manager_new (void)
-{
-        if (manager_object) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_SOUND_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object, (gpointer *) &manager_object);
-        }
-
-        return GSD_SOUND_MANAGER (manager_object);
 }

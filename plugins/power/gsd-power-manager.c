@@ -45,7 +45,7 @@
 #include "gsd-backlight.h"
 #include "gnome-settings-profile.h"
 #include "gnome-settings-bus.h"
-#include "gsd-enums.h"
+#include "gnome-settings-daemon/gsd-enums.h"
 #include "gsd-power-manager.h"
 
 #include "gsd-display-config-glue.h"
@@ -60,9 +60,9 @@
 #define UPOWER_DBUS_INTERFACE                   "org.freedesktop.UPower"
 #define UPOWER_DBUS_INTERFACE_KBDBACKLIGHT      "org.freedesktop.UPower.KbdBacklight"
 
-#define PPD_DBUS_NAME                           "net.hadess.PowerProfiles"
-#define PPD_DBUS_PATH                           "/net/hadess/PowerProfiles"
-#define PPD_DBUS_INTERFACE                      "net.hadess.PowerProfiles"
+#define PPD_DBUS_NAME                           "org.freedesktop.UPower.PowerProfiles"
+#define PPD_DBUS_PATH                           "/org/freedesktop/UPower/PowerProfiles"
+#define PPD_DBUS_INTERFACE                      "org.freedesktop.UPower.PowerProfiles"
 
 #define GSD_POWER_SETTINGS_SCHEMA               "org.gnome.settings-daemon.plugins.power"
 
@@ -137,13 +137,11 @@ typedef enum {
 
 struct _GsdPowerManager
 {
-        GObject                  parent;
+        GsdApplication           parent;
 
         /* D-Bus */
         GsdSessionManager       *session;
-        guint                    name_id;
         GDBusNodeInfo           *introspection_data;
-        GDBusConnection         *connection;
         GCancellable            *cancellable;
 
         /* Settings */
@@ -234,6 +232,15 @@ enum {
 
 static void     gsd_power_manager_class_init  (GsdPowerManagerClass *klass);
 static void     gsd_power_manager_init        (GsdPowerManager      *power_manager);
+static void     gsd_power_manager_startup     (GApplication *app);
+static void     gsd_power_manager_shutdown    (GApplication *app);
+static gboolean gsd_power_manager_dbus_register (GApplication    *app,
+                                                 GDBusConnection *connection,
+                                                 const char      *object_path,
+                                                 GError         **error);
+static void     gsd_power_manager_dbus_unregister (GApplication    *app,
+                                                   GDBusConnection *connection,
+                                                   const char      *object_path);
 
 static void      engine_device_warning_changed_cb (UpDevice *device, GParamSpec *pspec, GsdPowerManager *manager);
 static void      do_power_action_type (GsdPowerManager *manager, GsdPowerActionType action_type);
@@ -247,9 +254,10 @@ static void      idle_became_active_cb (GnomeIdleMonitor *monitor, guint watch_i
 static void      iio_proxy_changed (GsdPowerManager *manager);
 static void      iio_proxy_changed_cb (GDBusProxy *proxy, GVariant *changed_properties, GStrv invalidated_properties, gpointer user_data);
 
-G_DEFINE_TYPE (GsdPowerManager, gsd_power_manager, G_TYPE_OBJECT)
+static void      initable_iface_init (GInitableIface *initable_iface);
 
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE_WITH_CODE (GsdPowerManager, gsd_power_manager, GSD_TYPE_APPLICATION,
+                         G_IMPLEMENT_INTERFACE (G_TYPE_INITABLE, initable_iface_init))
 
 GQuark
 gsd_power_manager_error_quark (void)
@@ -1605,15 +1613,16 @@ backlight_iface_emit_changed (GsdPowerManager *manager,
                               gint32           value,
                               const char      *source)
 {
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         GVariant *params;
 
         /* not yet connected to the bus */
-        if (manager->connection == NULL)
+        if (connection == NULL)
                 return;
 
         params = g_variant_new_parsed ("(%s, [{'Brightness', <%i>}], @as [])", interface_name,
                                        value);
-        g_dbus_connection_emit_signal (manager->connection,
+        g_dbus_connection_emit_signal (connection,
                                        NULL,
                                        GSD_POWER_DBUS_PATH,
                                        "org.freedesktop.DBus.Properties",
@@ -1623,7 +1632,7 @@ backlight_iface_emit_changed (GsdPowerManager *manager,
         if (!source)
                 return;
 
-        g_dbus_connection_emit_signal (manager->connection,
+        g_dbus_connection_emit_signal (connection,
                                        NULL,
                                        GSD_POWER_DBUS_PATH,
                                        GSD_POWER_DBUS_INTERFACE_KEYBOARD,
@@ -1636,7 +1645,7 @@ static void
 backlight_notify_brightness_cb (GsdPowerManager *manager, GParamSpec *pspec, GsdBacklight *backlight)
 {
         backlight_iface_emit_changed (manager, GSD_POWER_DBUS_INTERFACE_SCREEN,
-                                      gsd_backlight_get_brightness (backlight, NULL), NULL);
+                                      gsd_backlight_get_brightness (backlight), NULL);
 }
 
 static void
@@ -1650,7 +1659,7 @@ display_backlight_dim (GsdPowerManager *manager,
 
         /* Fetch the current target brightness (not the actual display brightness)
          * and return if it is already lower than the idle percentage. */
-        gsd_backlight_get_brightness (manager->backlight, &brightness);
+        brightness = gsd_backlight_get_target_brightness (manager->backlight);
         if (brightness < idle_percentage)
                 return;
 
@@ -2214,16 +2223,10 @@ gsd_power_manager_finalize (GObject *object)
 
         g_return_if_fail (manager != NULL);
 
-        gsd_power_manager_stop (manager);
-
-        g_clear_object (&manager->connection);
-
-        if (manager->name_id != 0)
-                g_bus_unown_name (manager->name_id);
-
-        if (manager->iio_proxy_watch_id != 0)
-                g_bus_unwatch_name (manager->iio_proxy_watch_id);
-        manager->iio_proxy_watch_id = 0;
+        if (manager->cancellable != NULL) {
+                g_cancellable_cancel (manager->cancellable);
+                g_clear_object (&manager->cancellable);
+        }
 
         G_OBJECT_CLASS (gsd_power_manager_parent_class)->finalize (object);
 }
@@ -2232,8 +2235,14 @@ static void
 gsd_power_manager_class_init (GsdPowerManagerClass *klass)
 {
         GObjectClass *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
         object_class->finalize = gsd_power_manager_finalize;
+
+        application_class->startup = gsd_power_manager_startup;
+        application_class->shutdown = gsd_power_manager_shutdown;
+        application_class->dbus_register = gsd_power_manager_dbus_register;
+        application_class->dbus_unregister = gsd_power_manager_dbus_unregister;
 
         notify_init ("gnome-settings-daemon");
 }
@@ -2358,6 +2367,7 @@ power_keyboard_proxy_ready_cb (GObject             *source_object,
         GVariant *params = NULL;
         GError *error = NULL;
         GsdPowerManager *manager = GSD_POWER_MANAGER (user_data);
+        GDBusConnection *connection = g_application_get_dbus_connection (G_APPLICATION (manager));
         gint percentage;
 
         manager->upower_kbd_proxy = g_dbus_proxy_new_for_bus_finish (res, &error);
@@ -2433,7 +2443,7 @@ power_keyboard_proxy_ready_cb (GObject             *source_object,
         /* Same for "Steps" */
         params = g_variant_new_parsed ("(%s, [{'Steps', <%i>}], @as [])",
                                        GSD_POWER_DBUS_INTERFACE_KEYBOARD, backlight_get_n_steps (manager));
-        g_dbus_connection_emit_signal (manager->connection,
+        g_dbus_connection_emit_signal (connection,
                                        NULL,
                                        GSD_POWER_DBUS_PATH,
                                        "org.freedesktop.DBus.Properties",
@@ -2927,10 +2937,53 @@ iio_proxy_vanished_cb (GDBusConnection *connection,
         g_clear_object (&manager->iio_proxy);
 }
 
-gboolean
-gsd_power_manager_start (GsdPowerManager *manager,
-                         GError **error)
+static gboolean
+gsd_power_manager_initable_init (GInitable     *initable,
+                                 GCancellable  *cancellable,
+                                 GError       **error)
 {
+        GsdPowerManager *manager = GSD_POWER_MANAGER (initable);
+
+        /* Check whether we have a lid first */
+        if (manager->up_client == NULL) {
+                manager->up_client = up_client_new_full (manager->cancellable, error);
+                if (manager->up_client == NULL) {
+                        g_debug ("No upower support, disabling plugin");
+                        return FALSE;
+                }
+        }
+
+        /* Set up the logind proxy */
+        if (manager->logind_proxy == NULL) {
+                manager->logind_proxy =
+                        g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+                                                       0,
+                                                       NULL,
+                                                       SYSTEMD_DBUS_NAME,
+                                                       SYSTEMD_DBUS_PATH,
+                                                       SYSTEMD_DBUS_INTERFACE,
+                                                       NULL,
+                                                       error);
+                if (manager->logind_proxy == NULL) {
+                        g_debug ("No systemd (logind) support, disabling plugin");
+                        return FALSE;
+                }
+        }
+
+        return TRUE;
+}
+
+static void
+initable_iface_init (GInitableIface *initable_iface)
+{
+        initable_iface->init = gsd_power_manager_initable_init;
+}
+
+static void
+gsd_power_manager_startup (GApplication *app)
+{
+        GsdPowerManager *manager = GSD_POWER_MANAGER (app);
+        g_autoptr (GError) error = NULL;
         g_autofree char *chassis_type = NULL;
         g_debug ("Starting power manager");
         gnome_settings_profile_start (NULL);
@@ -2938,34 +2991,12 @@ gsd_power_manager_start (GsdPowerManager *manager,
         /* Check whether we are running in a VM */
         manager->is_virtual_machine = gsd_power_is_hardware_a_vm ();
 
-        /* Check whether we have a lid first */
-        manager->up_client = up_client_new_full (manager->cancellable, error);
-        if (manager->up_client == NULL) {
-                g_debug ("No upower support, disabling plugin");
-                return FALSE;
-        }
-
         /* FIXME: https://gitlab.gnome.org/GNOME/gnome-settings-daemon/-/issues/859 */
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
         manager->lid_is_present = up_client_get_lid_is_present (manager->up_client);
         if (manager->lid_is_present)
                 manager->lid_is_closed = up_client_get_lid_is_closed (manager->up_client);
         G_GNUC_END_IGNORE_DEPRECATIONS
-
-        /* Set up the logind proxy */
-        manager->logind_proxy =
-                g_dbus_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
-                                               0,
-                                               NULL,
-                                               SYSTEMD_DBUS_NAME,
-                                               SYSTEMD_DBUS_PATH,
-                                               SYSTEMD_DBUS_INTERFACE,
-                                               NULL,
-                                               error);
-        if (manager->logind_proxy == NULL) {
-                g_debug ("No systemd (logind) support, disabling plugin");
-                return FALSE;
-        }
 
         chassis_type = gnome_settings_get_chassis_type ();
         if (g_strcmp0 (chassis_type, "tablet") == 0 || g_strcmp0 (chassis_type, "handset") == 0) {
@@ -3095,35 +3126,29 @@ gsd_power_manager_start (GsdPowerManager *manager,
            (likely, considering that to get here we need a reply from gnome-shell)
         */
         if (manager->backlight) {
-                manager->ambient_percentage_old = gsd_backlight_get_brightness (manager->backlight, NULL);
+                manager->ambient_percentage_old = gsd_backlight_get_brightness (manager->backlight);
                 backlight_iface_emit_changed (manager, GSD_POWER_DBUS_INTERFACE_SCREEN,
                                               manager->ambient_percentage_old, NULL);
         } else {
                 backlight_iface_emit_changed (manager, GSD_POWER_DBUS_INTERFACE_SCREEN, -1, NULL);
         }
 
-        gnome_settings_profile_end (NULL);
+        G_APPLICATION_CLASS (gsd_power_manager_parent_class)->startup (app);
 
         gnome_settings_profile_end (NULL);
-        return TRUE;
 }
 
-void
-gsd_power_manager_stop (GsdPowerManager *manager)
+static void
+gsd_power_manager_shutdown (GApplication *app)
 {
+        GsdPowerManager *manager = GSD_POWER_MANAGER (app);
+
         g_debug ("Stopping power manager");
 
         if (manager->inhibit_lid_switch_timer_id != 0) {
                 g_source_remove (manager->inhibit_lid_switch_timer_id);
                 manager->inhibit_lid_switch_timer_id = 0;
         }
-
-        if (manager->cancellable != NULL) {
-                g_cancellable_cancel (manager->cancellable);
-                g_clear_object (&manager->cancellable);
-        }
-
-        g_clear_pointer (&manager->introspection_data, g_dbus_node_info_unref);
 
         if (manager->up_client)
                 g_signal_handlers_disconnect_by_data (manager->up_client, manager);
@@ -3177,6 +3202,10 @@ gsd_power_manager_stop (GsdPowerManager *manager)
                 g_source_remove (manager->xscreensaver_watchdog_timer_id);
                 manager->xscreensaver_watchdog_timer_id = 0;
         }
+
+        g_clear_handle_id (&manager->iio_proxy_watch_id, g_bus_unwatch_name);
+
+        G_APPLICATION_CLASS (gsd_power_manager_parent_class)->shutdown (app);
 }
 
 static void
@@ -3376,7 +3405,7 @@ handle_get_property_other (GsdPowerManager *manager,
                 }
 
                 if (manager->backlight)
-                        value = gsd_backlight_get_brightness (manager->backlight, NULL);
+                        value = gsd_backlight_get_brightness (manager->backlight);
                 else
                         value = -1;
 
@@ -3517,25 +3546,24 @@ static const GDBusInterfaceVTable interface_vtable =
         handle_set_property
 };
 
-static void
-on_bus_gotten (GObject             *source_object,
-               GAsyncResult        *res,
-               GsdPowerManager     *manager)
+static gboolean
+gsd_power_manager_dbus_register (GApplication    *app,
+                                 GDBusConnection *connection,
+                                 const char     *object_path,
+                                 GError         **error)
 {
-        GDBusConnection *connection;
+        GsdPowerManager *manager = GSD_POWER_MANAGER (app);
         GDBusInterfaceInfo **infos;
-        GError *error = NULL;
         guint i;
 
-        connection = g_bus_get_finish (res, &error);
-        if (connection == NULL) {
-                if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-                        g_warning ("Could not get session bus: %s", error->message);
-                g_error_free (error);
-                return;
-        }
+        if (!G_APPLICATION_CLASS (gsd_power_manager_parent_class)->dbus_register (app,
+                                                                                  connection,
+                                                                                  object_path,
+                                                                                  error))
+                return FALSE;
 
-        manager->connection = connection;
+        manager->introspection_data = g_dbus_node_info_new_for_xml (introspection_xml, NULL);
+        g_assert (manager->introspection_data != NULL);
 
         infos = manager->introspection_data->interfaces;
         for (i = 0; infos[i] != NULL; i++) {
@@ -3548,37 +3576,19 @@ on_bus_gotten (GObject             *source_object,
                                                    NULL);
         }
 
-        manager->name_id = g_bus_own_name_on_connection (connection,
-                                                               GSD_POWER_DBUS_NAME,
-                                                               G_BUS_NAME_OWNER_FLAGS_NONE,
-                                                               NULL,
-                                                               NULL,
-                                                               NULL,
-                                                               NULL);
+        return TRUE;
 }
 
 static void
-register_manager_dbus (GsdPowerManager *manager)
+gsd_power_manager_dbus_unregister (GApplication    *app,
+                                   GDBusConnection *connection,
+                                   const char      *object_path)
 {
-        manager->introspection_data = g_dbus_node_info_new_for_xml (introspection_xml, NULL);
-        g_assert (manager->introspection_data != NULL);
+        GsdPowerManager *manager = GSD_POWER_MANAGER (app);
 
-        g_bus_get (G_BUS_TYPE_SESSION,
-                   manager->cancellable,
-                   (GAsyncReadyCallback) on_bus_gotten,
-                   manager);
-}
+        g_clear_pointer (&manager->introspection_data, g_dbus_node_info_unref);
 
-GsdPowerManager *
-gsd_power_manager_new (void)
-{
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_POWER_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-                register_manager_dbus (manager_object);
-        }
-        return GSD_POWER_MANAGER (manager_object);
+        G_APPLICATION_CLASS (gsd_power_manager_parent_class)->dbus_unregister (app,
+                                                                               connection,
+                                                                               object_path);
 }
