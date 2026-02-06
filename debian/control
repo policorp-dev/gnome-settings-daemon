@@ -1,7 +1,7 @@
 Source: gnome-settings-daemon
 Section: gnome
 Priority: optional
-Maintainer: Edson Juliano Drosdeck <edson@policorp.com.br>
+Maintainer: Lucas Salles <lucas.salles@policorp.com.br>
 Build-Depends: debhelper-compat (= 13),
                dh-exec,
                dh-sequence-gnome,
@@ -45,7 +45,8 @@ Build-Depends: debhelper-compat (= 13),
                xkb-data,
                xserver-xorg-input-wacom [!hurd-any !s390 !s390x],
 Standards-Version: 4.7.0
-Homepage: https://gitlab.gnome.org/GNOME/gnome-settings-daemon
+Vcs-Git: https://github.com/policorp-dev/gnome-settings-daemon.git
+Vcs-Browser: https://github.com/policorp-dev/gnome-settings-daemon
 Rules-Requires-Root: no
 
 Package: gnome-settings-daemon

@@ -20,18 +20,13 @@
 #ifndef __GSD_XSETTINGS_MANAGER_H
 #define __GSD_XSETTINGS_MANAGER_H
 
-#include <glib-object.h>
+#include "gsd-application.h"
 
 G_BEGIN_DECLS
 
 #define GSD_TYPE_XSETTINGS_MANAGER         (gsd_xsettings_manager_get_type ())
 
-G_DECLARE_FINAL_TYPE (GsdXSettingsManager, gsd_xsettings_manager, GSD, XSETTINGS_MANAGER, GObject)
-
-GsdXSettingsManager   * gsd_xsettings_manager_new                 (void);
-gboolean                gsd_xsettings_manager_start               (GsdXSettingsManager *manager,
-                                                                   GError             **error);
-void                    gsd_xsettings_manager_stop                (GsdXSettingsManager *manager);
+G_DECLARE_FINAL_TYPE (GsdXSettingsManager, gsd_xsettings_manager, GSD, XSETTINGS_MANAGER, GsdApplication)
 
 G_END_DECLS
 

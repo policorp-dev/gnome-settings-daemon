@@ -20,12 +20,12 @@
 #ifndef __GSD_USB_PROTECTION_MANAGER_H
 #define __GSD_USB_PROTECTION_MANAGER_H
 
-#include <glib-object.h>
+#include "gsd-application.h"
 
 G_BEGIN_DECLS
 
 #define GSD_TYPE_USB_PROTECTION_MANAGER         (gsd_usb_protection_manager_get_type ())
-G_DECLARE_FINAL_TYPE (GsdUsbProtectionManager, gsd_usb_protection_manager, GSD, USB_PROTECTION_MANAGER, GObject);
+G_DECLARE_FINAL_TYPE (GsdUsbProtectionManager, gsd_usb_protection_manager, GSD, USB_PROTECTION_MANAGER, GsdApplication);
 
 typedef struct
 {
@@ -33,11 +33,6 @@ typedef struct
 } _GsdUsbProtectionManagerClass;
 
 GType                       gsd_usb_protection_manager_get_type        (void);
-
-GsdUsbProtectionManager *   gsd_usb_protection_manager_new             (void);
-gboolean                    gsd_usb_protection_manager_start           (GsdUsbProtectionManager *manager,
-                                                                        GError                 **error);
-void                        gsd_usb_protection_manager_stop            (GsdUsbProtectionManager *manager);
 
 G_END_DECLS
 

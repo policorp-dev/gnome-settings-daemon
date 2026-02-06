@@ -2,12 +2,15 @@ Index: gnome-settings-daemon/plugins/media-keys/gsd-media-keys-manager.c
 ===================================================================
 --- gnome-settings-daemon.orig/plugins/media-keys/gsd-media-keys-manager.c
 +++ gnome-settings-daemon/plugins/media-keys/gsd-media-keys-manager.c
-@@ -1375,15 +1375,15 @@ on_screen_locked (GsdScreenSaver      *s
+@@ -1378,15 +1378,15 @@ on_screen_locked (GsdScreenSaver      *s
  static void
  do_lock_screensaver (GsdMediaKeysManager *manager)
  {
 -        GsdMediaKeysManagerPrivate *priv = GSD_MEDIA_KEYS_MANAGER_GET_PRIVATE (manager);
--
++        /* Usar loginctl via g_spawn_async - método correto no GLib */
++        gchar *argv[] = {"loginctl", "lock-session", NULL};
++        GError *error = NULL;
+ 
 -        if (priv->screen_saver_proxy == NULL)
 -                priv->screen_saver_proxy = gnome_settings_bus_get_screen_saver_proxy ();
 -
@@ -15,15 +18,11 @@ Index: gnome-settings-daemon/plugins/media-keys/gsd-media-keys-manager.c
 -                                    priv->bus_cancellable,
 -                                    (GAsyncReadyCallback) on_screen_locked,
 -                                    manager);
-+        /* Usar loginctl via g_spawn_async - método correto no GLib */
-+        gchar *argv[] = {"loginctl", "lock-session", NULL};
-+        GError *error = NULL;
-+        
-+        if (!g_spawn_async (NULL, argv, NULL, G_SPAWN_SEARCH_PATH, 
++        if (!g_spawn_async (NULL, argv, NULL, G_SPAWN_SEARCH_PATH,
 +                           NULL, NULL, NULL, &error)) {
 +                g_warning ("Failed to lock screen with loginctl: %s", error->message);
 +                g_error_free (error);
-+        }
++	}
  }
  
  static void

@@ -20,18 +20,13 @@
 #ifndef __GSD_SCREENSAVER_PROXY_MANAGER_H
 #define __GSD_SCREENSAVER_PROXY_MANAGER_H
 
-#include <glib-object.h>
+#include "gsd-application.h"
 
 G_BEGIN_DECLS
 
 #define GSD_TYPE_SCREENSAVER_PROXY_MANAGER         (gsd_screensaver_proxy_manager_get_type ())
 
-G_DECLARE_FINAL_TYPE (GsdScreensaverProxyManager, gsd_screensaver_proxy_manager, GSD, SCREENSAVER_PROXY_MANAGER, GObject)
-
-GsdScreensaverProxyManager *gsd_screensaver_proxy_manager_new                 (void);
-gboolean                    gsd_screensaver_proxy_manager_start               (GsdScreensaverProxyManager  *manager,
-                                                                               GError                     **error);
-void                        gsd_screensaver_proxy_manager_stop                (GsdScreensaverProxyManager  *manager);
+G_DECLARE_FINAL_TYPE (GsdScreensaverProxyManager, gsd_screensaver_proxy_manager, GSD, SCREENSAVER_PROXY_MANAGER, GsdApplication)
 
 G_END_DECLS
 

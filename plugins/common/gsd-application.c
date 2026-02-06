@@ -1,6 +1,6 @@
 /* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 8 -*-
  *
- * Copyright (C) 2007 William Jon McCann <mccann@jhu.edu>
+ * Copyright (C) 2025 Red Hat Inc.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,28 +15,32 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  *
+ * Author: Carlos Garnacho <carlosg@gnome.org>
  */
-
-#ifndef __GSD_MEDIA_KEYS_MANAGER_H
-#define __GSD_MEDIA_KEYS_MANAGER_H
 
 #include "gsd-application.h"
 
-G_BEGIN_DECLS
+G_DEFINE_TYPE (GsdApplication, gsd_application, G_TYPE_APPLICATION)
 
-#define GSD_TYPE_MEDIA_KEYS_MANAGER         (gsd_media_keys_manager_get_type ())
-
-G_DECLARE_DERIVABLE_TYPE (GsdMediaKeysManager, gsd_media_keys_manager, GSD, MEDIA_KEYS_MANAGER, GsdApplication)
-
-struct _GsdMediaKeysManagerClass
+static void
+gsd_application_real_pre_shutdown (GsdApplication *app)
 {
-        GsdApplicationClass parent_class;
+	g_application_release (G_APPLICATION (app));
+}
 
-        void          (* media_player_key_pressed) (GsdMediaKeysManager *manager,
-                                                    const char          *application,
-                                                    const char          *key);
-};
+static void
+gsd_application_class_init (GsdApplicationClass *klass)
+{
+	klass->pre_shutdown = gsd_application_real_pre_shutdown;
+}
 
-G_END_DECLS
+static void
+gsd_application_init (GsdApplication *app)
+{
+}
 
-#endif /* __GSD_MEDIA_KEYS_MANAGER_H */
+void
+gsd_application_pre_shutdown (GsdApplication *app)
+{
+	GSD_APPLICATION_GET_CLASS (app)->pre_shutdown (app);
+}

@@ -20,18 +20,13 @@
 #ifndef __GSD_HOUSEKEEPING_MANAGER_H
 #define __GSD_HOUSEKEEPING_MANAGER_H
 
-#include <glib-object.h>
+#include "gsd-application.h"
 
 G_BEGIN_DECLS
 
 #define GSD_TYPE_HOUSEKEEPING_MANAGER         (gsd_housekeeping_manager_get_type ())
 
-G_DECLARE_FINAL_TYPE (GsdHousekeepingManager, gsd_housekeeping_manager, GSD, HOUSEKEEPING_MANAGER, GObject)
-
-GsdHousekeepingManager * gsd_housekeeping_manager_new           (void);
-gboolean                 gsd_housekeeping_manager_start         (GsdHousekeepingManager  *manager,
-                                                                 GError                 **error);
-void                     gsd_housekeeping_manager_stop          (GsdHousekeepingManager  *manager);
+G_DECLARE_FINAL_TYPE (GsdHousekeepingManager, gsd_housekeeping_manager, GSD, HOUSEKEEPING_MANAGER, GsdApplication)
 
 G_END_DECLS
 

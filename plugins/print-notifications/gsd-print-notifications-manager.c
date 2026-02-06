@@ -78,7 +78,7 @@ ippNextAttribute (ipp_t *ipp)
 
 struct _GsdPrintNotificationsManager
 {
-        GObject                       parent;
+        GsdApplication                parent;
 
         GDBusConnection              *cups_bus_connection;
         gint                          subscription_id;
@@ -100,13 +100,10 @@ struct _GsdPrintNotificationsManager
 
 static void     gsd_print_notifications_manager_class_init  (GsdPrintNotificationsManagerClass *klass);
 static void     gsd_print_notifications_manager_init        (GsdPrintNotificationsManager      *print_notifications_manager);
-static void     gsd_print_notifications_manager_finalize    (GObject                           *object);
 static gboolean cups_connection_test                        (gpointer                           user_data);
 static gboolean process_new_notifications                   (gpointer                           user_data);
 
-G_DEFINE_TYPE (GsdPrintNotificationsManager, gsd_print_notifications_manager, G_TYPE_OBJECT)
-
-static gpointer manager_object = NULL;
+G_DEFINE_TYPE (GsdPrintNotificationsManager, gsd_print_notifications_manager, GSD_TYPE_APPLICATION)
 
 static const char *
 password_cb (const char *prompt,
@@ -1584,10 +1581,11 @@ gsd_print_notifications_manager_start_idle (gpointer data)
         return G_SOURCE_REMOVE;
 }
 
-gboolean
-gsd_print_notifications_manager_start (GsdPrintNotificationsManager *manager,
-                                       GError                      **error)
+static void
+gsd_print_notifications_manager_startup (GApplication *application)
 {
+        GsdPrintNotificationsManager *manager = GSD_PRINT_NOTIFICATIONS_MANAGER (application);
+
         g_debug ("Starting print-notifications manager");
 
         gnome_settings_profile_start (NULL);
@@ -1607,14 +1605,15 @@ gsd_print_notifications_manager_start (GsdPrintNotificationsManager *manager,
         manager->start_idle_id = g_idle_add (gsd_print_notifications_manager_start_idle, manager);
         g_source_set_name_by_id (manager->start_idle_id, "[gnome-settings-daemon] gsd_print_notifications_manager_start_idle");
 
-        gnome_settings_profile_end (NULL);
+        G_APPLICATION_CLASS (gsd_print_notifications_manager_parent_class)->startup (application);
 
-        return TRUE;
+        gnome_settings_profile_end (NULL);
 }
 
-void
-gsd_print_notifications_manager_stop (GsdPrintNotificationsManager *manager)
+static void
+gsd_print_notifications_manager_shutdown (GApplication *application)
 {
+        GsdPrintNotificationsManager *manager = GSD_PRINT_NOTIFICATIONS_MANAGER (application);
         TimeoutData *data;
         ReasonData  *reason_data;
         HeldJob     *job;
@@ -1682,14 +1681,19 @@ gsd_print_notifications_manager_stop (GsdPrintNotificationsManager *manager)
         manager->held_jobs = NULL;
 
         scp_handler (manager, FALSE);
+
+        g_clear_handle_id (&manager->start_idle_id, g_source_remove);
+
+        G_APPLICATION_CLASS (gsd_print_notifications_manager_parent_class)->shutdown (application);
 }
 
 static void
 gsd_print_notifications_manager_class_init (GsdPrintNotificationsManagerClass *klass)
 {
-        GObjectClass   *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->finalize = gsd_print_notifications_manager_finalize;
+        application_class->startup = gsd_print_notifications_manager_startup;
+        application_class->shutdown = gsd_print_notifications_manager_shutdown;
 
         notify_init ("gnome-settings-daemon");
 }
@@ -1697,40 +1701,6 @@ gsd_print_notifications_manager_class_init (GsdPrintNotificationsManagerClass *k
 static void
 gsd_print_notifications_manager_init (GsdPrintNotificationsManager *manager)
 {
-}
-
-static void
-gsd_print_notifications_manager_finalize (GObject *object)
-{
-        GsdPrintNotificationsManager *manager;
-
-        g_return_if_fail (object != NULL);
-        g_return_if_fail (GSD_IS_PRINT_NOTIFICATIONS_MANAGER (object));
-
-        manager = GSD_PRINT_NOTIFICATIONS_MANAGER (object);
-
-        g_return_if_fail (manager != NULL);
-
-        gsd_print_notifications_manager_stop (manager);
-
-        if (manager->start_idle_id != 0)
-                g_source_remove (manager->start_idle_id);
-
-        G_OBJECT_CLASS (gsd_print_notifications_manager_parent_class)->finalize (object);
-}
-
-GsdPrintNotificationsManager *
-gsd_print_notifications_manager_new (void)
-{
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_PRINT_NOTIFICATIONS_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-        }
-
-        return GSD_PRINT_NOTIFICATIONS_MANAGER (manager_object);
 }
 
 G_GNUC_END_IGNORE_DEPRECATIONS

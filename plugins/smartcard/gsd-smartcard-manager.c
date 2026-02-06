@@ -36,7 +36,7 @@
 
 struct _GsdSmartcardManager
 {
-        GObject parent;
+        GsdApplication parent;
 
         guint start_idle_id;
         GsdSmartcardService *service;
@@ -55,24 +55,24 @@ struct _GsdSmartcardManager
 
 static void     gsd_smartcard_manager_class_init  (GsdSmartcardManagerClass *klass);
 static void     gsd_smartcard_manager_init        (GsdSmartcardManager      *self);
-static void     gsd_smartcard_manager_finalize    (GObject                  *object);
+static void     gsd_smartcard_manager_startup     (GApplication             *app);
+static void     gsd_smartcard_manager_shutdown     (GApplication             *app);
 static void     lock_screen                       (GsdSmartcardManager *self);
 static void     log_out                           (GsdSmartcardManager *self);
 static void     on_smartcards_from_module_watched (GsdSmartcardManager *self,
                                                    GAsyncResult        *result,
                                                    gpointer             user_data);
-G_DEFINE_TYPE (GsdSmartcardManager, gsd_smartcard_manager, G_TYPE_OBJECT)
+G_DEFINE_TYPE (GsdSmartcardManager, gsd_smartcard_manager, GSD_TYPE_APPLICATION)
 G_DEFINE_QUARK (gsd-smartcard-manager-error, gsd_smartcard_manager_error)
 G_LOCK_DEFINE_STATIC (gsd_smartcards_watch_tasks);
-
-static gpointer manager_object = NULL;
 
 static void
 gsd_smartcard_manager_class_init (GsdSmartcardManagerClass *klass)
 {
-        GObjectClass   *object_class = G_OBJECT_CLASS (klass);
+        GApplicationClass *application_class = G_APPLICATION_CLASS (klass);
 
-        object_class->finalize = gsd_smartcard_manager_finalize;
+        application_class->startup = gsd_smartcard_manager_startup;
+        application_class->shutdown = gsd_smartcard_manager_shutdown;
 
         gsd_smartcard_utils_register_error_domain (GSD_SMARTCARD_MANAGER_ERROR,
                                                    GSD_TYPE_SMARTCARD_MANAGER_ERROR);
@@ -135,7 +135,7 @@ wait_for_any_slot_event (GckModule  *module,
 
         p11_module = gck_module_get_functions (module);
 
-        /* We first trt to use the blocking version of the call, in case it
+        /* We first try to use the blocking version of the call, in case it
          * is not supported, we fallback in the non-blocking version as
          * historically not all the p11-kit modules used supported it.
          */
@@ -260,10 +260,10 @@ watch_one_event_from_module (GsdSmartcardManager       *self,
 {
         g_autoptr(GError) wait_error = NULL;
         g_autoptr(GckSlot) slot = NULL;
+        g_autoptr(GckTokenInfo) token = NULL;
         GckTokenInfo *old_token;
         gulong return_sleep = 0;
         gulong handler_id;
-        gboolean token_is_present;
         gboolean token_changed;
         gboolean wait_blocks;
 
@@ -327,7 +327,9 @@ watch_one_event_from_module (GsdSmartcardManager       *self,
         operation->number_of_consecutive_errors = 0;
 
         g_assert (slot);
-        token_is_present = gck_slot_has_flags (slot, CKF_TOKEN_PRESENT);
+        if (gck_slot_has_flags (slot, CKF_TOKEN_PRESENT)) {
+                token = gck_slot_get_token_info (slot);
+        }
         old_token = g_hash_table_lookup (operation->smartcards, slot);
         token_changed = TRUE;
 
@@ -337,10 +339,7 @@ watch_one_event_from_module (GsdSmartcardManager       *self,
          * for the old card
          */
         if (old_token != NULL) {
-                if (token_is_present) {
-                        g_autoptr(GckTokenInfo) token = NULL;
-
-                        token = gck_slot_get_token_info (slot);
+                if (token) {
                         token_changed = !token_info_equals (token, old_token);
                 }
 
@@ -356,14 +355,14 @@ watch_one_event_from_module (GsdSmartcardManager       *self,
                 }
         }
 
-        if (token_is_present) {
+        if (token) {
                 if (token_changed) {
                         g_debug ("Detected smartcard insertion event in slot %lu",
                                  gck_slot_get_handle (slot));
 
                         g_hash_table_replace (operation->smartcards,
-                                        g_object_ref (slot),
-                                        gck_slot_get_token_info (slot));
+                                              g_object_ref (slot),
+                                              g_steal_pointer (&token));
 
                         gsd_smartcard_service_sync_token (self->service, slot,
                                                           cancellable);
@@ -452,13 +451,29 @@ sync_initial_tokens_from_driver (GsdSmartcardManager *self,
 
                 if (!gck_slot_has_flags (slot, CKF_TOKEN_PRESENT)) {
                         CK_FUNCTION_LIST_PTR p11k_module = gck_module_get_functions (module);
+                        g_autofree char *module_name = p11_kit_module_get_name (p11k_module);
 
                         g_warning ("Module %s returned slot with no tokens",
-                                   p11_kit_module_get_name (p11k_module));
+                                   module_name);
                         continue;
                 }
 
+                /* gck_slot_get_token_info() may return an error in case the
+                 * underlying p11k module call to C_GetTokenInfo() fails.
+                 * The gck API doesn't expose that (if not with a warning), but
+                 * it may still return a NULL token info (for example when an
+                 * inserted token is not recognized).
+                 * So handle this case gracefully to prevent us to crash.
+                 */
                 token_info = gck_slot_get_token_info (slot);
+                if (!token_info) {
+                        CK_FUNCTION_LIST_PTR p11k_module = gck_module_get_functions (module);
+                        g_autofree char *module_name = p11_kit_module_get_name (p11k_module);
+
+                        g_warning ("Module %s returned slot %lu has no valid token",
+                                   module_name, gck_slot_get_handle (slot));
+                        continue;
+                }
 
                 g_debug ("Detected smartcard '%s' in slot %lu at start up",
                          token_info->label, gck_slot_get_handle (slot));
@@ -520,12 +535,30 @@ on_smartcards_from_module_watched (GsdSmartcardManager *self,
 }
 
 static gboolean
-module_has_removable_slot (GckModule *module)
+module_should_be_watched (GckModule *module)
 {
         g_autolist(GckSlot) slots = NULL;
         GList *l;
 
         slots = gck_module_get_slots (module, FALSE);
+
+        if (slots == NULL) {
+                CK_FUNCTION_LIST_PTR p11_module;
+                g_autofree char *module_name = NULL;
+
+                p11_module = gck_module_get_functions (module);
+                module_name = p11_kit_module_get_name (p11_module);
+
+                /* No slot is currently available, so we can't make assumptions
+                 * whether the module supports or not removable devices.
+                 * So let's be conservative here and let's just assume that the
+                 * module does support removable devices, so that we will monitor
+                 * it for changes.
+                 */
+                g_debug ("No slot found for module %s, let's assume it supports "
+                         "removable devices", module_name);
+                return TRUE;
+        }
 
         for (l = slots; l; l = l->next) {
                 GckSlot *slot = l->data;
@@ -562,13 +595,16 @@ on_modules_initialized (GObject      *source_object,
                 GckModule *module = l->data;
                 CK_FUNCTION_LIST_PTR p11_module;
                 g_autofree char *module_name = NULL;
+                gboolean should_watch;
 
                 p11_module = gck_module_get_functions (module);
                 module_name = p11_kit_module_get_name (p11_module);
+                should_watch = module_should_be_watched (module);
 
-                g_debug ("Found p11-kit module %s", module_name);
+                g_debug ("Found p11-kit module %s (watched: %d)", module_name,
+                         should_watch);
 
-                if (!module_has_removable_slot (module))
+                if (!should_watch)
                         continue;
 
                 self->smartcard_modules = g_list_prepend (self->smartcard_modules,
@@ -679,23 +715,26 @@ gsd_smartcard_manager_idle_cb (GsdSmartcardManager *self)
         return G_SOURCE_REMOVE;
 }
 
-gboolean
-gsd_smartcard_manager_start (GsdSmartcardManager  *self,
-                             GError              **error)
+static void
+gsd_smartcard_manager_startup (GApplication *app)
 {
+        GsdSmartcardManager *self = GSD_SMARTCARD_MANAGER (app);
+
         gnome_settings_profile_start (NULL);
 
         self->start_idle_id = g_idle_add ((GSourceFunc) gsd_smartcard_manager_idle_cb, self);
         g_source_set_name_by_id (self->start_idle_id, "[gnome-settings-daemon] gsd_smartcard_manager_idle_cb");
 
-        gnome_settings_profile_end (NULL);
+        G_APPLICATION_CLASS (gsd_smartcard_manager_parent_class)->startup (app);
 
-        return TRUE;
+        gnome_settings_profile_end (NULL);
 }
 
-void
-gsd_smartcard_manager_stop (GsdSmartcardManager *self)
+static void
+gsd_smartcard_manager_shutdown (GApplication *app)
 {
+        GsdSmartcardManager *self = GSD_SMARTCARD_MANAGER (app);
+
         g_debug ("Stopping smartcard manager");
 
         g_cancellable_cancel (self->cancellable);
@@ -705,6 +744,9 @@ gsd_smartcard_manager_stop (GsdSmartcardManager *self)
         g_clear_object (&self->cancellable);
         g_clear_object (&self->session_manager);
         g_clear_object (&self->screen_saver);
+        g_clear_handle_id (&self->start_idle_id, g_source_remove);
+
+        G_APPLICATION_CLASS (gsd_smartcard_manager_parent_class)->shutdown (app);
 }
 
 static void
@@ -863,37 +905,4 @@ gsd_smartcard_manager_get_inserted_tokens (GsdSmartcardManager *self,
                 *num_tokens = g_list_length (inserted_tokens);
 
         return inserted_tokens;
-}
-
-static void
-gsd_smartcard_manager_finalize (GObject *object)
-{
-        GsdSmartcardManager *self;
-
-        g_return_if_fail (object != NULL);
-        g_return_if_fail (GSD_IS_SMARTCARD_MANAGER (object));
-
-        self = GSD_SMARTCARD_MANAGER (object);
-
-        g_return_if_fail (self != NULL);
-
-        g_clear_handle_id (&self->start_idle_id, g_source_remove);
-
-        gsd_smartcard_manager_stop (self);
-
-        G_OBJECT_CLASS (gsd_smartcard_manager_parent_class)->finalize (object);
-}
-
-GsdSmartcardManager *
-gsd_smartcard_manager_new (void)
-{
-        if (manager_object != NULL) {
-                g_object_ref (manager_object);
-        } else {
-                manager_object = g_object_new (GSD_TYPE_SMARTCARD_MANAGER, NULL);
-                g_object_add_weak_pointer (manager_object,
-                                           (gpointer *) &manager_object);
-        }
-
-        return GSD_SMARTCARD_MANAGER (manager_object);
 }
